@@ -99,36 +99,33 @@ def discover_places(city: str, place_type: str = None, min_rating: float = 0.0) 
 def lookup_weather(city: str, start_date: str = None, end_date: str = None) -> dict:
     return {"success": True, "summary": f"Weather for {city} during {start_date} to {end_date} is generally pleasant.", "daily_forecast": []}
 
-def generate_itinerary_tables(daily_data: list) -> str:
-    """
-    daily_data: list of dicts: 
-    [{'day': 1, 'date': '2025-07-15', 'activity': '...', 'flight': 3304, 'hotel': 2828, 'min': 20, 'max': 30}, ...]
-    """
-    daily_expense = 1750
-    rows = []
-    
-    # Calculate totals
+def generate_itinerary_tables(daily_logs: list) -> str:
+    # 1. Start fresh with accurate totals
     total_flights = sum(city_data['flight'] for city_data in city_data_memory.values())
     total_hotels = sum(city_data['hotel'] for city_data in city_data_memory.values())
+    
+    # 2. Calculate Daily Expenses precisely
+    # We ignore the LLM's 'Daily Expenses' entries and use the fixed ₹1750
     total_daily = len(daily_logs) * 1750
     grand_total = total_flights + total_hotels + total_daily
     
-    # Build Expense Log Table
+    # 3. Generate the Table Rows
     log_table = "| Day | Date | Activity | Flight | Hotel | Daily Exp | Total | Weather |\n"
     log_table += "|---|---|---|---|---|---|---|---|\n"
     
-    for d in daily_data:
-        day_total = d['flight'] + d['hotel'] + daily_expense
-        log_table += f"| {d['day']} | {d['date']} | {d['activity']} | ₹{d['flight']} | ₹{d['hotel']} | ₹{daily_expense} | ₹{day_total} | {d['min']}/{d['max']} |\n"
+    for d in daily_logs:
+        # Re-calculate individual row totals to be 100% sure
+        row_total = d['flight'] + d['hotel'] + 1750
+        log_table += f"| {d['day']} | {d['date']} | {d['activity']} | ₹{d['flight']} | ₹{d['hotel']} | ₹1750 | ₹{row_total} | {d['weather']} |\n"
     
-    # Build Budget Breakdown Table
-    breakdown_table = "\n| Expense | Total |\n|---|---|\n"
-    breakdown_table += f"| **Flights** | ₹{total_f} |\n"
-    breakdown_table += f"| **Lodging** | ₹{total_h} |\n"
-    breakdown_table += f"| **Daily Expenses** | ₹{total_d} |\n"
-    breakdown_table += f"| **GRAND TOTAL** | **₹{grand_total}** |\n"
+    # 4. Generate the Breakdown
+    breakdown = f"\n| Expense | Total |\n|---|---|\n"
+    breakdown += f"| **Flights** | ₹{total_flights} |\n"
+    breakdown += f"| **Lodging** | ₹{total_hotels} |\n"
+    breakdown += f"| **Daily Expenses** | ₹{total_daily} |\n"
+    breakdown += f"| **GRAND TOTAL** | **₹{grand_total}** |\n"
     
-    return log_table + breakdown_table
+    return log_table + breakdown
 
 def estimate_budget(itinerary_summary: str) -> dict:
     """
