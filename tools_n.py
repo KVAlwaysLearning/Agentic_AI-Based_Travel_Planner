@@ -45,6 +45,10 @@ def init_database():
     conn = sqlite3.connect('travel_itinerary.db')
     cursor = conn.cursor()
     cursor.executescript('''
+        DROP TABLE IF EXISTS flights;
+        DROP TABLE IF EXISTS hotels;
+        DROP TABLE IF EXISTS places;
+
         CREATE TABLE IF NOT EXISTS flights (
             flight_id TEXT PRIMARY KEY,
             airline TEXT,
@@ -202,7 +206,8 @@ def propagate_constraints(user_inputs):
     
     for (fixed_cat, target_cat), rule in CONSTRAINT_MATRIX.items():
         val = user_inputs.get(fixed_cat)
-        if val and val != "Flexible":
+        is_flex = (val == "Flexible") or (val == "flexible") or (isinstance(val, list) and ("Flexible" in val or "flexible" in val))
+        if val and not is_flex:
             # For lists like attractions / cities / types, make sure we extract values correctly
             try:
                 allowed = rule(val)
@@ -229,18 +234,28 @@ def resolve_and_save_state(user_inputs, date_range=None):
     if date_range and 'cities' in domains:
         domains['cities'] = filter_by_weather(domains['cities'], date_range)
     
-    # Resolve values by defaulting if 'Flexible'
+    # Resolve values by defaulting if 'Flexible' or empty lists
     resolved = {}
     for k in domains.keys():
         user_val = user_inputs.get(k)
-        if user_val != "Flexible" and user_val is not None:
+        is_flexible = (user_val == "Flexible") or (user_val == "flexible") or (user_val is None) or (isinstance(user_val, list) and (len(user_val) == 0 or "Flexible" in user_val or "flexible" in user_val))
+        
+        if not is_flexible:
             resolved[k] = user_val
         else:
-            resolved[k] = domains[k][0] if len(domains[k]) > 0 else None
+            if k == 'cities':
+                # Settle on first 2 cities of domain path
+                resolved[k] = domains[k][:2] if len(domains[k]) >= 2 else (domains[k][:1] if domains[k] else ["Mumbai"])
+            else:
+                resolved[k] = domains[k][0] if len(domains[k]) > 0 else None
             
+    # Normalize cities to a list
+    if not isinstance(resolved.get('cities'), list):
+         resolved['cities'] = [resolved['cities']] if resolved['cities'] else []
+
     # Keep durations/hotel_tiers aligned with days and hotel_types
-    resolved['durations'] = [3 if resolved['hotel_types'] == 'luxurious' else 2] * (len([resolved['cities']]) if resolved['cities'] else 1)
-    resolved['hotel_tiers'] = [resolved['hotel_types']] * (len([resolved['cities']]) if resolved['cities'] else 1)
+    resolved['durations'] = [3 if resolved['hotel_types'] == 'luxurious' else 2] * len(resolved['cities'])
+    resolved['hotel_tiers'] = [resolved['hotel_types']] * len(resolved['cities'])
 
     global_trip_state.update(resolved)
     return "State resolved and saved."
