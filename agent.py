@@ -84,7 +84,7 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     
     # Initialize the LLM via LangChain Groq GenAI (using robust gemini-3.5-flash)
     llm = ChatGroq(
-    model="llama-3.3-8b-instant", # Groq supports high-speed Llama 3 models
+    model="llama-3.1-8b-instant", # Groq supports high-speed Llama 3 models
     temperature=0.2,
     api_key=os.getenv("GROQ_API_KEY") # You'll need to set this secret in Colab
 
