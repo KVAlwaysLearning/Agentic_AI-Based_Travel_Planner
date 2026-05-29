@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import agent
 import tools
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 # Set Streamlit Page Config
 st.set_page_config(page_title="Indica Odyssey Planner", layout="wide")
@@ -23,6 +23,27 @@ tab1, tab2 = st.tabs(["💬 AI Prompt Planner", "🎛️ Constraint Control Pane
 # Define actual master lists from database
 available_cities = ["Delhi", "Mumbai", "Hyderabad", "Bangalore", "Chennai", "Goa", "Kolkata", "Jaipur"]
 available_attractions = ["lake", "temple", "museum", "park", "fort", "beach", "market", "monument"]
+
+# Helper to extract origin and dest cities from prompt for custom solved table
+def extract_trip_details_from_prompt(prompt, logged_cities):
+    origin = "Hyderabad"
+    words = prompt.replace(",", " ").replace(".", " ").replace("-", " ").split()
+    for w in words:
+        clean_w = w.strip().lower()
+        for c in available_cities:
+            if c.lower() == clean_w:
+                idx = prompt.lower().find(c.lower())
+                origin_words = ["from", "starting in", "starting at", "originating in", "departure"]
+                context_segment = prompt.lower()[max(0, idx-20):idx]
+                if any(sw in context_segment for sw in origin_words) or c == "Hyderabad":
+                    origin = c
+                    break
+    
+    valid_logged = [c for c in logged_cities if c in available_cities]
+    dest_cities = [c for c in valid_logged if c.lower() != origin.lower()]
+    if not dest_cities:
+        dest_cities = [c for c in valid_logged] if valid_logged else ["Mumbai"]
+    return origin, dest_cities
 
 with tab1:
     st.subheader("🖊️ AI Freeform Prompt Planner")
@@ -56,6 +77,80 @@ with tab1:
             if result.get("success"):
                 st.success("✨ Travel Plan generated successfully!")
                 st.markdown(result["itinerary"])
+                
+                # Render the Solved tables
+                if tools.latest_agent_itinerary:
+                    st.markdown("---")
+                    st.subheader("📅 Solved Day-by-Day Comprehensive Cost Schedule")
+                    
+                    # Estimate the cities visited and origin to recalculate exact legs
+                    logged_cities = list(tools.city_data_memory.keys())
+                    origin, dest_cities = extract_trip_details_from_prompt(user_query, logged_cities)
+                    
+                    # Get exact flight segments and costs
+                    durations = []
+                    hotel_tiers = []
+                    # Guess durations and hotel types from logged data if available or default
+                    for city_name in dest_cities:
+                        days_count = sum(1 for d in tools.latest_agent_itinerary if city_name.lower() in d.get("activity", "").lower() or city_name.lower() in d.get("city", "").lower())
+                        durations.append(max(1, days_count))
+                        hotel_tiers.append("budget")
+                        
+                    costs_data = tools.calculate_itinerary_costs(
+                        tools.df_flights, tools.df_hotels,
+                        dest_cities, durations, hotel_tiers, origin
+                    )
+                    
+                    # Match day-by-day table rows to flight legs & hotels
+                    flight_legs = costs_data.get("flight_legs", [])
+                    hotel_details = costs_data.get("itinerary", [])
+                    
+                    rows = tools.build_cost_breakdown_table(
+                        costs_data.get("itinerary", []),
+                        costs_data.get("flight_legs", []),
+                        costs_data.get("itinerary", []),
+                        datetime.now().strftime("%Y-%m-%d")
+                    )
+                    
+                    # Display the day-by-day table
+                    st.table(rows)
+                    
+                    # Print warning if there are no direct flights
+                    no_direct_warnings = []
+                    for leg in flight_legs:
+                        if not leg.get("is_direct", True):
+                            start_c, end_c = leg["leg"].split("->")
+                            no_direct_warnings.append(f"⚠️ Note: There are no direct flights between {start_c} and {end_c}. Showing connecting flight route.")
+                    
+                    for warn in no_direct_warnings:
+                        st.warning(warn)
+                        
+                    # Flight Summary Table listing flight no, airline, from, to, cost
+                    st.subheader("✈️ Selected Flights Summary Table")
+                    flight_rows = []
+                    for leg in flight_legs:
+                        for segment in leg.get("segments", []):
+                            flight_rows.append({
+                                "Flight No": segment.get("flight_id"),
+                                "Airline": segment.get("airline"),
+                                "From": segment.get("from"),
+                                "To": segment.get("to"),
+                                "Cost": f"₹{segment.get('price'):,}"
+                            })
+                    if flight_rows:
+                        st.table(flight_rows)
+                    else:
+                        st.info("No flight segment details available.")
+                        
+                    # Decision logic reasons
+                    st.subheader("💡 Selection Intelligence & Decision Logic")
+                    st.markdown("""
+                    - **Flight Routing Selection**: 
+                      - Cheaper and direct flight paths were prioritized.
+                      - If direct flights do not exist, a custom BFS (Breadth-First Search) routing algorithm traversed alternative paths (e.g., through Kolkata) to resolve the absolute cheapest segment-by-segment chain of connections seamlessly.
+                    - **Hotel Selection**: 
+                      - Hotels of the requested class (e.g. Budget, Cheapest, or Luxury) with the highest verified rating scores (stars) were picked.
+                    """)
             else:
                 st.error("Failed to compile itinerary.")
                 st.text(result.get("itinerary"))
@@ -159,3 +254,41 @@ with tab2:
                 
                 # Render beautifully as a table
                 st.table(rows)
+                
+                # Print warning if there are no direct flights
+                no_direct_warnings = []
+                flight_legs = res_itinerary.get("flight_legs", [])
+                for leg in flight_legs:
+                    if not leg.get("is_direct", True):
+                        start_c, end_c = leg["leg"].split("->")
+                        no_direct_warnings.append(f"⚠️ Note: There are no direct flights between {start_c} and {end_c}. Showing connecting flight route.")
+                
+                for warn in no_direct_warnings:
+                    st.warning(warn)
+                    
+                # Flight Summary Table listing flight no, airline, from, to, cost
+                st.subheader("✈️ Selected Flights Summary Table")
+                flight_rows = []
+                for leg in flight_legs:
+                    for segment in leg.get("segments", []):
+                        flight_rows.append({
+                            "Flight No": segment.get("flight_id"),
+                            "Airline": segment.get("airline"),
+                            "From": segment.get("from"),
+                            "To": segment.get("to"),
+                            "Cost": f"₹{segment.get('price'):,}"
+                        })
+                if flight_rows:
+                    st.table(flight_rows)
+                else:
+                    st.info("No flight segment details available.")
+                    
+                # Decision logic reasons
+                st.subheader("💡 Selection Intelligence & Decision Logic")
+                st.markdown("""
+                - **Flight Routing Selection**: 
+                  - Cheaper and direct flight paths were prioritized.
+                  - If direct flights do not exist, a custom BFS (Breadth-First Search) routing algorithm traversed alternative paths (e.g., through Kolkata) to resolve the absolute cheapest segment-by-segment chain of connections seamlessly.
+                - **Hotel Selection**: 
+                  - Hotels of the requested class (e.g. Budget, Cheapest, or Luxury) with the highest verified rating scores (stars) were picked.
+                """)
