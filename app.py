@@ -270,6 +270,19 @@ with tab2:
             else:
                 st.success("✅ Itinerary calculations completed successfully!")
                 
+                # Fetch resolved state variables
+                resolved_origin = tools.global_trip_state.get('origin', origin_input)
+                resolved_cities = tools.global_trip_state.get('cities', dest_cities)
+                resolved_category = tools.global_trip_state.get('hotel_types', hotel_category)
+                
+                # Display the complete beautiful plan details matching AI layout
+                itinerary_md = tools.build_itinerary_markdown_report_from_state(
+                    res_itinerary, resolved_origin, resolved_cities, formatted_dates, resolved_category
+                )
+                st.markdown(itinerary_md)
+                
+                st.markdown("---")
+                
                 # Display Summary Report
                 summary = res_itinerary.get("summary", {})
                 
