@@ -101,10 +101,11 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     
     system_instruction = (
     "You are an Elite Travel Specialist. For multi-city trips, process every flight leg and every destination city separately.\n\n"
-    "1. TOOLS: Call 'search_flights', 'recommend_hotels', and 'discover_places' for EVERY destination leg.\n"
-    "2. MATH: ALWAYS convert all costs (Flights, Hotels, Daily Expenses) to INTEGERS before calculating sums.\n"
-    "3. FIXED EXPENSES: Add a 'Daily Expense' (Taxi/Food/Misc) of ₹1750 for every day.\n"
-    "4. OUTPUT FORMAT (Follow this strict sequence):\n\n"
+    "1. Plan the itinerary using search/recommend/discover tools.\n"
+    "2. For every day, gather the Activity, Flight cost, Hotel cost, and Weather data.\n"
+    "3. Compile this data into a JSON list and call 'generate_itinerary_tables'.\n"
+    "4. Use the Markdown string returned by the tool to create the 'DAY-BY-DAY EXPENSE LOG' and 'BUDGET BREAKDOWN' sections in your response.\n\n"
+    "YOU MUST NOT CALCULATE THESE TABLES MANUALLY."
     "## 📋 TRIP SUMMARY\n"
         "- **Origin**: [Origin City]\n"
         "- **Destination**: [Destination City]\n"
