@@ -52,8 +52,12 @@ def search_flights(source: str, destination: str) -> dict:
         f['duration'] = f"{int(duration_mins // 60)}h {int(duration_mins % 60)}m"
         f['price'] = int(f['price'])  # FIX: Convert EVERY flight in the list
         
+    
     cheapest = min(matches, key=lambda x: x["price"])
     fastest = min(matches, key=lambda x: x["duration_minutes"])
+
+    price = int(cheapest['price'])
+    log_cost("flights", price) # SAVED!
     
     return {
         "success": True, 
@@ -71,9 +75,14 @@ def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 1000
     # FIX: Convert all prices to int before sorting
     for h in matches:
         h['price_per_night'] = int(h['price_per_night'])
-        
+    log_cost("hotels", price_per_night) # SAVED!    
     sorted_by_rating = sorted(matches, key=lambda x: x.get("stars", 0), reverse=True)
+
+    price = int(h['price_per_night'])
+    log_cost("hotels", price) # SAVED!
+    
     return {"success": True, "top_rated": sorted_by_rating[0], "summary": f"Top rated: {sorted_by_rating[0]['name']}"}
+
 
 def discover_places(city: str, place_type: str = None, min_rating: float = 0.0) -> dict:
     places = load_json_data("places.json")
@@ -94,9 +103,9 @@ def generate_itinerary_tables(daily_data: list) -> str:
     rows = []
     
     # Calculate totals
-    total_f = sum(d['flight'] for d in daily_data)
-    total_h = sum(d['hotel'] for d in daily_data)
-    total_d = len(daily_data) * daily_expense
+    total_f = sum(cost_memory["flights"])
+    total_h = sum(cost_memory["hotels"])
+    total_d = len(daily_data) * 1750
     grand_total = total_f + total_h + total_d
     
     # Build Expense Log Table
