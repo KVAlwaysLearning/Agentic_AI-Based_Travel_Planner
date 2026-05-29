@@ -2,20 +2,23 @@ import json
 import os
 from datetime import datetime
 
-# In tools.py
-# Format: {"mumbai": {"flight": 3000, "hotel": 2500}, "goa": {"flight": 4000, "hotel": 3000}}
+# --- State Management for Costs ---
 city_data_memory = {}
 
 def reset_memory():
     global city_data_memory
     city_data_memory = {}
 
-def log_city_data(city, category, amount):
+def log_city_data(city: str, category: str, amount: int):
+    """
+    Saves the cost of a flight or hotel for a specific city.
+    category must be 'flight' or 'hotel'.
+    """
+    global city_data_memory
     if city not in city_data_memory:
         city_data_memory[city] = {"flight": 0, "hotel": 0}
-    
-    # Store/update the value for that city
     city_data_memory[city][category] = int(amount)
+    return f"Successfully logged {category} for {city}: ₹{amount}"
 
 def get_all_costs():
     # Helper to return the total sums
