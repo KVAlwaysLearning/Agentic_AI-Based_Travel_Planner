@@ -60,7 +60,8 @@ def search_flights(source: str, destination: str) -> dict:
     fastest = min(matches, key=lambda x: x["duration_minutes"])
 
     price = int(cheapest['price'])
-    log_cost("flights", price) # SAVED!
+    # FIX: Use the new function with the city name
+    log_city_data(city=destination, category="flight", amount=price)
     
     return {
         "success": True, 
@@ -82,7 +83,8 @@ def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 1000
     sorted_by_rating = sorted(matches, key=lambda x: x.get("stars", 0), reverse=True)
 
     price = int(h['price_per_night'])
-    log_cost("hotels", price) # SAVED!
+    # FIX: Use the new function with the city name
+    log_city_data(city=destination, category="flight", amount=price)
     
     return {"success": True, "top_rated": sorted_by_rating[0], "summary": f"Top rated: {sorted_by_rating[0]['name']}"}
 
