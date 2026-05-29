@@ -118,21 +118,18 @@ df_places['rating'] = df_places['rating'].astype(float).round(1)
 df_hotels = df_hotels.sort_values(by=['city', 'price_per_night']).reset_index(drop=True)
 df_hotels['category'] = 'budget'
 
-def label_hotels_by_category(group):
-    if len(group) == 0:
-        return group
-    group.iloc[0, group.columns.get_loc('category')] = 'cheapest'
-    if len(group) > 1:
-        group.iloc[-1, group.columns.get_loc('category')] = 'luxurious'
-    if len(group) > 5:
-        group.loc[group.index[1:-1], 'category'] = 'mid-range'
-        mid_idx = len(group) // 2
-        group.iloc[mid_idx-1 : mid_idx+2, group.columns.get_loc('category')] = 'budget'
-    return group
-
-df_hotels = df_hotels.groupby('city', group_keys=False).apply(label_hotels_by_category)
-if 'city' not in df_hotels.columns:
-    df_hotels = df_hotels.reset_index()
+# Group by city and slice/mutate category values robustly without groupby-apply quirks
+for city, grp in df_hotels.groupby('city'):
+    indices = grp.index
+    if len(indices) == 0:
+        continue
+    df_hotels.loc[indices[0], 'category'] = 'cheapest'
+    if len(indices) > 1:
+        df_hotels.loc[indices[-1], 'category'] = 'luxurious'
+    if len(indices) > 5:
+        df_hotels.loc[indices[1:-1], 'category'] = 'mid-range'
+        mid_idx = len(indices) // 2
+        df_hotels.loc[indices[mid_idx-1 : mid_idx+2], 'category'] = 'budget'
 
 # Build Activities dataframe
 df_activities = df_places.groupby('name')['city'].apply(list).reset_index()
