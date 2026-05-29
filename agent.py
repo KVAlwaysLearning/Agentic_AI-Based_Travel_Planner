@@ -95,6 +95,8 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
         StructuredTool.from_function(func=tools.discover_places, name="discover_places", description="Discover attractions in a city."),
         StructuredTool.from_function(func=tools.lookup_weather, name="lookup_weather", description="Lookup weather for destination."),
         StructuredTool.from_function(func=tools.estimate_budget, name="estimate_budget", description="Accepts a summary string to finalize total budget calculations.")
+        StructuredTool.from_function(func=tools.generate_itinerary_tables,name="generate_itinerary_tables",
+                                     description="Takes a list of daily trip data and generates the perfectly formatted Expense Log and Budget Breakdown Markdown tables.") 
     ]
     
     system_instruction = (
