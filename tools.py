@@ -7,10 +7,12 @@ from datetime import datetime, timedelta
 
 # --- State Management for Costs ---
 city_data_memory = {}
+latest_agent_itinerary = []
 
 def reset_memory():
-    global city_data_memory
+    global city_data_memory, latest_agent_itinerary
     city_data_memory.clear()
+    latest_agent_itinerary = []
 
 def log_city_data(city: str, category: str, amount: int):
     """
@@ -346,6 +348,9 @@ def lookup_weather(city: str, start_date: str = None, end_date: str = None) -> d
     }
 
 def generate_itinerary_tables(daily_logs: list) -> str:
+    global latest_agent_itinerary
+    latest_agent_itinerary = list(daily_logs)
+    
     total_flights, total_hotels = get_all_costs()
     total_daily = len(daily_logs) * 1750
     grand_total = total_flights + total_hotels + total_daily
@@ -369,6 +374,98 @@ def estimate_budget(itinerary_summary: str) -> dict:
     return {"success": True, "summary": "Budget calculation logged.", "details": itinerary_summary}
 
 # --- Complex Pathfinding BFS & Total Calculations ---
+
+def get_detailed_flight_path(origin: str, destination: str) -> dict:
+    """
+    Computes the cheapest route between origin and destination using BFS.
+    Returns:
+    {
+        "success": bool,
+        "is_direct": bool,
+        "path": list of cities,
+        "segments": list of dictionaries with complete flight info for each leg,
+        "total_price": int,
+        "message": str
+    }
+    """
+    flights = load_json_data("flights.json")
+    if not flights:
+        return {"success": False, "message": "No flights available.", "is_direct": True, "segments": [], "total_price": 0}
+    
+    # Direct search
+    direct_matches = [f for f in flights if f.get("from", "").strip().lower() == origin.strip().lower() and f.get("to", "").strip().lower() == destination.strip().lower()]
+    if direct_matches:
+        cheapest_direct = min(direct_matches, key=lambda x: int(x.get("price", 999999)))
+        return {
+            "success": True,
+            "is_direct": True,
+            "path": [origin, destination],
+            "segments": [cheapest_direct],
+            "total_price": int(cheapest_direct.get("price")),
+            "message": f"Direct flight found from {origin} to {destination}."
+        }
+    
+    # No direct, use BFS to find cheapest path
+    routes = {}
+    for f in flights:
+        f_from = f.get("from", "").strip()
+        f_to = f.get("to", "").strip()
+        if f_from and f_to:
+            key = (f_from.lower(), f_to.lower())
+            if key not in routes:
+                routes[key] = []
+            routes[key].append(f)
+            
+    queue = collections.deque([(origin.strip(), [origin.strip()], [], 0)])
+    best_path = None
+    best_price = float('inf')
+    
+    while queue:
+        curr_city, path, path_flights, current_price = queue.popleft()
+        
+        if curr_city.lower() == destination.strip().lower():
+            if current_price < best_price:
+                best_price = current_price
+                best_path = {
+                    "path": path,
+                    "segments": path_flights,
+                    "total_price": current_price
+                }
+            continue
+            
+        if len(path) > 4: # limit to max 3 hops/legs
+            continue
+            
+        for (f_start, f_end), options in routes.items():
+            if f_start == curr_city.lower() and f_end not in [p.lower() for p in path]:
+                cheapest_segment = min(options, key=lambda x: int(x.get("price", 999999)))
+                segment_price = int(cheapest_segment.get("price", 0))
+                
+                queue.append((
+                    cheapest_segment.get("to"),
+                    path + [cheapest_segment.get("to")],
+                    path_flights + [cheapest_segment],
+                    current_price + segment_price
+                ))
+                
+    if best_path:
+        return {
+            "success": True,
+            "is_direct": False,
+            "path": best_path["path"],
+            "segments": best_path["segments"],
+            "total_price": best_path["total_price"],
+            "message": f"No direct flights from {origin} to {destination}. Found connecting flight path."
+        }
+    
+    return {
+        "success": False,
+        "is_direct": False,
+        "path": [],
+        "segments": [],
+        "total_price": 0,
+        "message": f"No flight connectivity found between {origin} and {destination}."
+    }
 
 def analyze_flight_itinerary(df_flights, origin, destination, max_hops=3):
     if df_flights.empty:
@@ -566,13 +663,18 @@ def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_ti
     flight_legs = []
     
     for i in range(len(full_route) - 1):
-        leg_data = analyze_flight_itinerary(df_flights, full_route[i], full_route[i+1])
-        if isinstance(leg_data, dict) and 'cheapest' in leg_data:
-            price = leg_data['cheapest']['total_min_price']
+        leg_data = get_detailed_flight_path(full_route[i], full_route[i+1])
+        if leg_data["success"]:
+            price = leg_data["total_price"]
         else:
             price = 5000 # default fallback
         total_flight_cost += price
-        flight_legs.append({"leg": f"{full_route[i]}->{full_route[i+1]}", "cost": price})
+        flight_legs.append({
+            "leg": f"{full_route[i]}->{full_route[i+1]}", 
+            "cost": price,
+            "is_direct": leg_data.get("is_direct", True),
+            "segments": leg_data.get("segments", [])
+        })
 
     return {
         "itinerary": detailed_itinerary,
@@ -620,28 +722,55 @@ def build_cost_breakdown_table(itinerary_data, flight_legs, hotel_details, start
     else:
          start_date_obj = datetime.now()
          
-    # Day-by-day row generations
-    for city_idx, city_info in enumerate(hotel_details):
-        nights_count = city_info['nights']
-        for day in range(nights_count):
-            flight_cost = 0
-            if day == 0: 
-                leg = next((f for f in flight_legs if city_info['city'] in f['leg']), None)
-                flight_cost = leg['cost'] if leg else 0
-                
-            hotel_per_night = city_info['hotel_cost'] / nights_count
-            misc_per_night = city_info['misc_cost'] / nights_count
+    current_day = 1
+    
+    for i, city_info in enumerate(hotel_details):
+        city = city_info['city']
+        nights = city_info['nights']
+        
+        flight_cost = 0
+        leg_match = None
+        if i < len(flight_legs):
+            leg_match = flight_legs[i]
+            flight_cost = leg_match['cost']
+            
+        hotel_per_night = city_info['hotel_cost'] / nights if nights > 0 else 0
+        misc_per_night = city_info['misc_cost'] / nights if nights > 0 else 0
+        
+        for d in range(nights):
+            f_cost = flight_cost if d == 0 else 0
             
             table_rows.append({
-                "day_of_trip": f"Day {len(table_rows) + 1}",
-                "date": (start_date_obj + timedelta(days=len(table_rows))).strftime("%Y-%m-%d"),
-                "city": city_info['city'],
-                "activity": f"Exploring attractions in {city_info['city']}",
-                "flight_cost": int(flight_cost),
+                "day_of_trip": f"Day {current_day}",
+                "date": (start_date_obj + timedelta(days=current_day-1)).strftime("%Y-%m-%d"),
+                "city": city,
+                "activity": f"Exploring attractions in {city}",
+                "flight_cost": int(f_cost),
                 "hotel_cost": int(hotel_per_night),
                 "misc_expense": int(misc_per_night),
                 "weather": "Sunny, 28°C",
                 "temp_humidity": "28°C / 60%"
             })
+            current_day += 1
 
+    # Now add the final day return flight!
+    return_flight_cost = 0
+    if len(flight_legs) > len(hotel_details):
+        return_flight_cost = flight_legs[-1]['cost']
+        
+    last_city = hotel_details[-1]['city'] if hotel_details else "Destination"
+    avg_misc = int(sum(c['misc_cost']/c['nights'] for c in hotel_details if c['nights'] > 0) / len(hotel_details)) if hotel_details else 1750
+
+    table_rows.append({
+        "day_of_trip": f"Day {current_day}",
+        "date": (start_date_obj + timedelta(days=current_day-1)).strftime("%Y-%m-%d"),
+        "city": last_city,
+        "activity": f"Flight travel from {last_city} back to Origin",
+        "flight_cost": int(return_flight_cost),
+        "hotel_cost": 0,
+        "misc_expense": int(avg_misc),
+        "weather": "Sunny, 28°C",
+        "temp_humidity": "28°C / 60%"
+    })
+    
     return table_rows
