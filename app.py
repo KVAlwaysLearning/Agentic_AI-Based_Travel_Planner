@@ -25,24 +25,45 @@ available_cities = ["Delhi", "Mumbai", "Hyderabad", "Bangalore", "Chennai", "Goa
 available_attractions = ["lake", "temple", "museum", "park", "fort", "beach", "market", "monument"]
 
 # Helper to extract origin and dest cities from prompt for custom solved table
-def extract_trip_details_from_prompt(prompt, logged_cities):
-    origin = "Hyderabad"
-    words = prompt.replace(",", " ").replace(".", " ").replace("-", " ").split()
-    for w in words:
-        clean_w = w.strip().lower()
-        for c in available_cities:
-            if c.lower() == clean_w:
-                idx = prompt.lower().find(c.lower())
-                origin_words = ["from", "starting in", "starting at", "originating in", "departure"]
-                context_segment = prompt.lower()[max(0, idx-20):idx]
-                if any(sw in context_segment for sw in origin_words) or c == "Hyderabad":
-                    origin = c
-                    break
+def extract_trip_details_from_prompt(prompt, logged_cities=None):
+    prompt_lower = prompt.lower()
+    cities_in_prompt = []
+    for c in available_cities:
+        idx = prompt_lower.find(c.lower())
+        if idx != -1:
+            cities_in_prompt.append((idx, c))
+    # Sort by appearance in the prompt
+    cities_in_prompt.sort(key=lambda x: x[0])
     
-    valid_logged = [c for c in logged_cities if c in available_cities]
-    dest_cities = [c for c in valid_logged if c.lower() != origin.lower()]
+    if not cities_in_prompt:
+        return "Hyderabad", ["Delhi", "Mumbai"]
+        
+    # Determine origin
+    origin = None
+    origin_words = ["from", "starting in", "starting at", "originating in", "departure", "out of"]
+    
+    for idx, c in cities_in_prompt:
+        # Get context preceding this city
+        start_idx = max(0, idx - 15)
+        context = prompt_lower[start_idx:idx]
+        if any(ow in context for ow in origin_words):
+            origin = c
+            break
+            
+    # Fallback for origin if no "from" matched
+    if not origin:
+        if any(c == "Hyderabad" for _, c in cities_in_prompt):
+            origin = "Hyderabad"
+        else:
+            origin = cities_in_prompt[0][1]
+            
+    # Destinations are all other mentioned cities in they order they were mentioned
+    dest_cities = [c for _, c in cities_in_prompt if c != origin]
+    
+    # Fallback destinations if empty
     if not dest_cities:
-        dest_cities = [c for c in valid_logged] if valid_logged else ["Mumbai"]
+        dest_cities = ["Delhi", "Mumbai"] if origin != "Delhi" else ["Mumbai"]
+        
     return origin, dest_cities
 
 with tab1:
@@ -81,7 +102,6 @@ with tab1:
                 # Render the Solved tables
                 if tools.latest_agent_itinerary:
                     st.markdown("---")
-                    st.subheader("📅 Solved Day-by-Day Comprehensive Cost Schedule")
                     
                     # Estimate the cities visited and origin to recalculate exact legs
                     logged_cities = list(tools.city_data_memory.keys())
@@ -90,16 +110,34 @@ with tab1:
                     # Get exact flight segments and costs
                     durations = []
                     hotel_tiers = []
-                    # Guess durations and hotel types from logged data if available or default
+                    # Guess durations and hotel types from logged data if available or default/from prompt
+                    hotel_tier_guess = "budget"
+                    if "cheap" in user_query.lower():
+                        hotel_tier_guess = "cheapest"
+                    elif "luxur" in user_query.lower():
+                        hotel_tier_guess = "luxurious"
+                        
                     for city_name in dest_cities:
                         days_count = sum(1 for d in tools.latest_agent_itinerary if city_name.lower() in d.get("activity", "").lower() or city_name.lower() in d.get("city", "").lower())
                         durations.append(max(1, days_count))
-                        hotel_tiers.append("budget")
+                        hotel_tiers.append(hotel_tier_guess)
                         
                     costs_data = tools.calculate_itinerary_costs(
                         tools.df_flights, tools.df_hotels,
                         dest_cities, durations, hotel_tiers, origin
                     )
+                    
+                    summary = costs_data.get("summary", {})
+                    
+                    st.subheader("📊 Solved Package Cost Summary")
+                    # Use bento visual grids
+                    sc1, sc2, sc3, sc4 = st.columns(4)
+                    sc1.metric("Flight Expense Log", f"₹{summary.get('total_flight', 0):,}")
+                    sc2.metric("Hotels & Lodging", f"₹{summary.get('total_hotel', 0):,}")
+                    sc3.metric("Daily Buffer Expense", f"₹{summary.get('total_misc', 0):,}")
+                    sc4.metric("Grand Total Cost", f"₹{summary.get('grand_total', 0):,}")
+                    
+                    st.subheader("📅 Solved Day-by-Day Comprehensive Cost Schedule")
                     
                     # Match day-by-day table rows to flight legs & hotels
                     flight_legs = costs_data.get("flight_legs", [])
