@@ -50,11 +50,6 @@ def lookup_weather(city: str, start_date: str = None, end_date: str = None) -> d
 
 def estimate_budget(itinerary_summary: str) -> dict:
     """
-    Accepts a descriptive summary of costs calculated by the agent.
-    The agent should perform the math and pass the final summary here.
+    Accepts the final aggregated cost summary from the agent.
     """
-    return {
-        "success": True, 
-        "summary": "Budget breakdown finalized.", 
-        "details": itinerary_summary
-    }
+    return {"success": True, "summary": "Budget calculation logged.", "details": itinerary_summary}
