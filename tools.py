@@ -108,10 +108,10 @@ def generate_itinerary_tables(daily_data: list) -> str:
     rows = []
     
     # Calculate totals
-    total_f = sum(cost_memory["flights"])
-    total_h = sum(cost_memory["hotels"])
-    total_d = len(daily_data) * 1750
-    grand_total = total_f + total_h + total_d
+    total_flights = sum(city_data['flight'] for city_data in city_data_memory.values())
+    total_hotels = sum(city_data['hotel'] for city_data in city_data_memory.values())
+    total_daily = len(daily_logs) * 1750
+    grand_total = total_flights + total_hotels + total_daily
     
     # Build Expense Log Table
     log_table = "| Day | Date | Activity | Flight | Hotel | Daily Exp | Total | Weather |\n"
