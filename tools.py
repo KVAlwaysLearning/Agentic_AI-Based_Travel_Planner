@@ -84,7 +84,7 @@ def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 1000
 
     price = int(h['price_per_night'])
     # FIX: Use the new function with the city name
-    log_city_data(city=destination, category="flight", amount=price)
+    log_city_data(city=city, category="hotel", amount=price)
     
     return {"success": True, "top_rated": sorted_by_rating[0], "summary": f"Top rated: {sorted_by_rating[0]['name']}"}
 
