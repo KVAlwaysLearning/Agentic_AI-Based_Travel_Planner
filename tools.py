@@ -2,6 +2,28 @@ import json
 import os
 from datetime import datetime
 
+# In tools.py
+# Format: {"mumbai": {"flight": 3000, "hotel": 2500}, "goa": {"flight": 4000, "hotel": 3000}}
+city_data_memory = {}
+
+def reset_memory():
+    global city_data_memory
+    city_data_memory = {}
+
+def log_city_data(city, category, amount):
+    if city not in city_data_memory:
+        city_data_memory[city] = {"flight": 0, "hotel": 0}
+    
+    # Store/update the value for that city
+    city_data_memory[city][category] = int(amount)
+
+def get_all_costs():
+    # Helper to return the total sums
+    total_flights = sum(data.get("flight", 0) for data in city_data_memory.values())
+    total_hotels = sum(data.get("hotel", 0) for data in city_data_memory.values())
+    return total_flights, total_hotels
+
+
 # Path helper
 def load_json_data(filename):
     paths_to_try = [
