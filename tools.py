@@ -63,6 +63,37 @@ def discover_places(city: str, place_type: str = None, min_rating: float = 0.0) 
 def lookup_weather(city: str, start_date: str = None, end_date: str = None) -> dict:
     return {"success": True, "summary": f"Weather for {city} during {start_date} to {end_date} is generally pleasant.", "daily_forecast": []}
 
+def generate_itinerary_tables(daily_data: list) -> str:
+    """
+    daily_data: list of dicts: 
+    [{'day': 1, 'date': '2025-07-15', 'activity': '...', 'flight': 3304, 'hotel': 2828, 'min': 20, 'max': 30}, ...]
+    """
+    daily_expense = 1750
+    rows = []
+    
+    # Calculate totals
+    total_f = sum(d['flight'] for d in daily_data)
+    total_h = sum(d['hotel'] for d in daily_data)
+    total_d = len(daily_data) * daily_expense
+    grand_total = total_f + total_h + total_d
+    
+    # Build Expense Log Table
+    log_table = "| Day | Date | Activity | Flight | Hotel | Daily Exp | Total | Weather |\n"
+    log_table += "|---|---|---|---|---|---|---|---|\n"
+    
+    for d in daily_data:
+        day_total = d['flight'] + d['hotel'] + daily_expense
+        log_table += f"| {d['day']} | {d['date']} | {d['activity']} | ₹{d['flight']} | ₹{d['hotel']} | ₹{daily_expense} | ₹{day_total} | {d['min']}/{d['max']} |\n"
+    
+    # Build Budget Breakdown Table
+    breakdown_table = "\n| Expense | Total |\n|---|---|\n"
+    breakdown_table += f"| **Flights** | ₹{total_f} |\n"
+    breakdown_table += f"| **Lodging** | ₹{total_h} |\n"
+    breakdown_table += f"| **Daily Expenses** | ₹{total_d} |\n"
+    breakdown_table += f"| **GRAND TOTAL** | **₹{grand_total}** |\n"
+    
+    return log_table + breakdown_table
+
 def estimate_budget(itinerary_summary: str) -> dict:
     """
     Accepts the final aggregated cost summary from the agent.
