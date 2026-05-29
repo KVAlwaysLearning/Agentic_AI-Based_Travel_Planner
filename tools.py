@@ -19,24 +19,39 @@ def search_flights(source: str, destination: str) -> dict:
     src, dest = source.strip().lower(), destination.strip().lower()
     matches = [f for f in flights if src in f.get("from", "").lower() and dest in f.get("to", "").lower()]
     
+    if not matches: 
+        return {"success": False, "message": f"No flights found from {source} to {destination}."}
+    
     for f in matches:
         dep = datetime.fromisoformat(f['departure_time'])
         arr = datetime.fromisoformat(f['arrival_time'])
         duration_mins = (arr - dep).total_seconds() / 60
         f['duration_minutes'] = duration_mins
         f['duration'] = f"{int(duration_mins // 60)}h {int(duration_mins % 60)}m"
+        f['price'] = int(f['price'])  # FIX: Convert EVERY flight in the list
         
-    if not matches: return {"success": False, "message": f"No flights found from {source} to {destination}."}
     cheapest = min(matches, key=lambda x: x["price"])
     fastest = min(matches, key=lambda x: x["duration_minutes"])
-    return {"success": True, "cheapest_option": cheapest, "fastest_option": fastest, "summary": f"Found {len(matches)} flights from {source} to {destination}."}
+    
+    return {
+        "success": True, 
+        "cheapest_option": cheapest, 
+        "fastest_option": fastest, 
+        "summary": f"Found {len(matches)} flights from {source} to {destination}."
+    }
 
 def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 100000.0) -> dict:
     hotels = load_json_data("hotels.json")
     matches = [h for h in hotels if city.strip().lower() in h.get("city", "").lower() and h.get("stars", 0) >= min_rating and h.get("price_per_night", 0) <= max_price]
+    
     if not matches: return {"success": False, "message": f"No hotels found in {city} matching criteria."}
+    
+    # FIX: Convert all prices to int before sorting
+    for h in matches:
+        h['price_per_night'] = int(h['price_per_night'])
+        
     sorted_by_rating = sorted(matches, key=lambda x: x.get("stars", 0), reverse=True)
-    return {"success": True, "top_rated": sorted_by_rating[0], "summary": f"Top rated hotel in {city}: {sorted_by_rating[0]['name']}"}
+    return {"success": True, "top_rated": sorted_by_rating[0], "summary": f"Top rated: {sorted_by_rating[0]['name']}"}
 
 def discover_places(city: str, place_type: str = None, min_rating: float = 0.0) -> dict:
     places = load_json_data("places.json")
