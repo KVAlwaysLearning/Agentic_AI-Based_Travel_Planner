@@ -95,7 +95,11 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
         StructuredTool.from_function(func=tools.discover_places, name="discover_places", description="Discover attractions in a city."),
         StructuredTool.from_function(func=tools.lookup_weather, name="lookup_weather", description="Lookup weather for destination."),
         StructuredTool.from_function(func=tools.estimate_budget, name="estimate_budget", description="Accepts a summary string to finalize total budget calculations."),
-        StructuredTool.from_function(func=tools.log_city_data,name="log_city_data",description="Call this to save costs. Arguments: city (str), category ('flight' or 'hotel'), amount (int)."),
+        StructuredTool.from_function(
+        func=tools.log_city_data, 
+        name="log_city_data", 
+        description="Save flight or hotel costs. Args: city, category ('flight' or 'hotel'), amount."
+    ),
         StructuredTool.from_function(func=tools.generate_itinerary_tables,name="generate_itinerary_tables",
                                      description="Takes a list of daily trip data and generates the perfectly formatted Expense Log and Budget Breakdown Markdown tables.") 
     ]
