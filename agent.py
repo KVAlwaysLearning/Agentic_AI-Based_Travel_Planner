@@ -111,7 +111,7 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     "3. Compile the daily details into a JSON list of dictionaries.\n"
     "4. Call 'generate_itinerary_tables' with your JSON list.\n"
     "5. IMPORTANT: Print ONLY the Markdown returned by the tool. DO NOT manually create tables or perform math in your response."
-    "YOU MUST NOT CALCULATE THESE TABLES MANUALLY."
+   
     "## 📋 TRIP SUMMARY\n"
         "- **Origin**: [Origin City]\n"
         "- **Destination**: [Destination City]\n"
