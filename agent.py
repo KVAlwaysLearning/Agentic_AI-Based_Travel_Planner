@@ -106,13 +106,11 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     
     system_instruction = (
     "You are an Elite Travel Specialist. For multi-city trips, process every flight leg and every destination city separately.\n\n"
-    "1. Plan the itinerary using search/recommend/discover tools.\n"
-    "2. For every flight and hotel you find, call 'log_city_data' immediately to store the price.\n"
-    "3. When the itinerary is complete, call 'generate_itinerary_tables'.\n"
-    "4. DO NOT output any math yourself. The 'generate_itinerary_tables' tool will handle the logic and ensure the GRAND TOTAL is mathematically perfect."
-    "5. For every day, gather the Activity, Flight cost, Hotel cost, and Weather data.\n"
-    "6. Compile this data into a JSON list and call 'generate_itinerary_tables'.\n"
-    "7. Use the Markdown string returned by the tool to create the 'DAY-BY-DAY EXPENSE LOG' and 'BUDGET BREAKDOWN' sections in your response.\n\n"
+    "1. For each city, use 'search_flights' and 'recommend_hotels' to find costs.\n"
+    "2. For every cost found, you MUST call 'log_city_data' to store it safely.\n"
+    "3. Build your daily itinerary plan. Create a list of daily dictionaries with details for each day.\n"
+    "4. FINAL STEP: You MUST call 'generate_itinerary_tables' with your list of daily details.\n"
+    "5. DO NOT create the table manually. Only use the string returned by 'generate_itinerary_tables'."
     "YOU MUST NOT CALCULATE THESE TABLES MANUALLY."
     "## 📋 TRIP SUMMARY\n"
         "- **Origin**: [Origin City]\n"
