@@ -131,6 +131,8 @@ def label_hotels_by_category(group):
     return group
 
 df_hotels = df_hotels.groupby('city', group_keys=False).apply(label_hotels_by_category)
+if 'city' not in df_hotels.columns:
+    df_hotels = df_hotels.reset_index()
 
 # Build Activities dataframe
 df_activities = df_places.groupby('name')['city'].apply(list).reset_index()
