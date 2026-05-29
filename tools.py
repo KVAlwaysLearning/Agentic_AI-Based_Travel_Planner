@@ -79,7 +79,7 @@ def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 1000
     # FIX: Convert all prices to int before sorting
     for h in matches:
         h['price_per_night'] = int(h['price_per_night'])
-    log_cost("hotels", price_per_night) # SAVED!    
+   
     sorted_by_rating = sorted(matches, key=lambda x: x.get("stars", 0), reverse=True)
 
     price = int(h['price_per_night'])
