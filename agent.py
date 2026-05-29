@@ -103,7 +103,7 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     system_instruction = (
     "You are an Elite Travel Specialist. For multi-city trips, process every flight leg and every destination city separately.\n\n"
     "1. Plan the itinerary using search/recommend/discover tools.\n"
-    "2. For every flight and hotel you find, call 'log_cost' immediately to store the price.\n"
+    "2. For every flight and hotel you find, call 'log_city_data' immediately to store the price.\n"
     "3. When the itinerary is complete, call 'generate_itinerary_tables'.\n"
     "4. DO NOT output any math yourself. The 'generate_itinerary_tables' tool will handle the logic and ensure the GRAND TOTAL is mathematically perfect."
     "5. For every day, gather the Activity, Flight cost, Hotel cost, and Weather data.\n"
