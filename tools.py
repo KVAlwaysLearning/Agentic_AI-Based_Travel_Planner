@@ -270,9 +270,48 @@ def search_flights(origin: str, destination: str) -> dict:
     flights = load_json_data("flights.json")
     matches = [f for f in flights if source_clean in f.get("from", "").lower() and dest_clean in f.get("to", "").lower()]
     
-    if not matches: 
-        return {"success": False, "message": f"No flights found from {origin} to {destination}."}
-    
+    if not matches:
+        # No direct flight found. Use BFS for connecting path!
+        res_detailed = get_detailed_flight_path(origin, destination)
+        if not res_detailed["success"]:
+            return {"success": False, "message": f"No flights or connecting paths found from {origin} to {destination}."}
+        
+        # Log the flight cost in state
+        log_city_data(city=destination, category="flight", amount=res_detailed["total_price"])
+        
+        # Add formatted durations for each segment in the connecting route
+        formatted_segments = []
+        for s in res_detailed["segments"]:
+            dep = datetime.fromisoformat(s['departure_time'])
+            arr = datetime.fromisoformat(s['arrival_time'])
+            duration_mins = (arr - dep).total_seconds() / 60
+            s['duration_minutes'] = duration_mins
+            s['duration'] = f"{int(duration_mins // 60)}h {int(duration_mins % 60)}m"
+            s['price'] = int(s['price'])
+            formatted_segments.append(s)
+            
+        cheapest_option = {
+            "flight_id": "MULTIPLE",
+            "airline": "Connecting Flight",
+            "from": origin,
+            "to": destination,
+            "departure_time": formatted_segments[0]["departure_time"] if formatted_segments else "",
+            "arrival_time": formatted_segments[-1]["arrival_time"] if formatted_segments else "",
+            "price": res_detailed["total_price"],
+            "duration": " / ".join([s["duration"] for s in formatted_segments])
+        }
+        
+        return {
+            "success": True,
+            "is_direct": False,
+            "cheapest_option": cheapest_option,
+            "fastest_option": cheapest_option,
+            "matches": formatted_segments,
+            "segments": formatted_segments,
+            "price": res_detailed["total_price"],
+            "summary": f"⚠️ Note: There are no direct flights between {origin} and {destination}. Showing connecting flight route: {' -> '.join(res_detailed['path'])} with a total price of ₹{res_detailed['total_price']}."
+        }
+        
     for f in matches:
         dep = datetime.fromisoformat(f['departure_time'])
         arr = datetime.fromisoformat(f['arrival_time'])
@@ -287,11 +326,25 @@ def search_flights(origin: str, destination: str) -> dict:
     price = int(cheapest['price'])
     log_city_data(city=destination, category="flight", amount=price)
     
+    cheapest_option_segments = [{
+        "flight_id": cheapest.get("flight_id"),
+        "airline": cheapest.get("airline"),
+        "from": cheapest.get("from"),
+        "to": cheapest.get("to"),
+        "departure_time": cheapest.get("departure_time"),
+        "arrival_time": cheapest.get("arrival_time"),
+        "price": cheapest.get("price"),
+        "duration": cheapest.get("duration")
+    }]
+    
     return {
         "success": True, 
+        "is_direct": True,
         "cheapest_option": cheapest, 
         "fastest_option": fastest, 
         "matches": matches,
+        "segments": cheapest_option_segments,
+        "price": price,
         "summary": f"Found {len(matches)} flights from {origin} to {destination}."
     }
 
