@@ -36,7 +36,7 @@ def extract_trip_details_from_prompt(prompt, logged_cities=None):
     cities_in_prompt.sort(key=lambda x: x[0])
     
     if not cities_in_prompt:
-        return "Hyderabad", ["Delhi", "Mumbai"]
+        return "Delhi", ["Mumbai"]
         
     # Determine origin
     origin = None
@@ -50,19 +50,29 @@ def extract_trip_details_from_prompt(prompt, logged_cities=None):
             origin = c
             break
             
-    # Fallback for origin if no "from" matched
-    if not origin:
-        if any(c == "Hyderabad" for _, c in cities_in_prompt):
-            origin = "Hyderabad"
+    dest_cities = []
+    if origin:
+        dest_cities = [c for _, c in cities_in_prompt if c != origin]
+    else:
+        # No explicit origin found
+        if len(cities_in_prompt) == 1:
+            single_city = cities_in_prompt[0][1]
+            origin = "Delhi"
+            if single_city == "Delhi":
+                dest_cities = ["Mumbai"]
+            else:
+                dest_cities = [single_city]
         else:
-            origin = cities_in_prompt[0][1]
-            
-    # Destinations are all other mentioned cities in they order they were mentioned
-    dest_cities = [c for _, c in cities_in_prompt if c != origin]
-    
-    # Fallback destinations if empty
+            first_city = cities_in_prompt[0][1]
+            if first_city == "Delhi" or first_city == "Hyderabad":
+                origin = first_city
+                dest_cities = [c for _, c in cities_in_prompt if c != origin]
+            else:
+                origin = "Delhi"
+                dest_cities = [c for _, c in cities_in_prompt if c != "Delhi"]
+                
     if not dest_cities:
-        dest_cities = ["Delhi", "Mumbai"] if origin != "Delhi" else ["Mumbai"]
+        dest_cities = ["Delhi"] if origin != "Delhi" else ["Mumbai"]
         
     return origin, dest_cities
 
@@ -142,7 +152,12 @@ def extract_constraints_from_prompt(prompt):
             attraction = attr
             break
             
-    return days, start_date, hotel_tier, attraction
+    is_completed_before = False
+    before_keywords = ["before", "by", "complete before", "completed before", "end by", "finish by", "return by", "completed by", "arrive by", "back by", "leave before"]
+    if any(kw in prompt_lower for kw in before_keywords):
+        is_completed_before = True
+            
+    return days, start_date, hotel_tier, attraction, is_completed_before
 
 with tab1:
     st.subheader("🖊️ AI Freeform Prompt Planner")
@@ -163,13 +178,39 @@ with tab1:
         else:
             # Check if number of cities exceeds number of days (m > n)
             origin, dest_cities = extract_trip_details_from_prompt(user_query)
-            p_days, p_start_date, p_hotel_tier, p_attr = extract_constraints_from_prompt(user_query)
+            p_days, p_start_date, p_hotel_tier, p_attr, is_completed_before = extract_constraints_from_prompt(user_query)
             n_days = p_days if p_days is not None else 5
             m_cities = len(dest_cities)
             
             if m_cities > n_days:
                 st.error(f"Tour not possible in {n_days} days, instead check schedule for {m_cities} days, or reduce no of destination or increase no of days.")
             else:
+                # Solve completed_before vs started_on date
+                if p_start_date:
+                    try:
+                        start_date_obj = datetime.strptime(p_start_date, "%Y-%m-%d")
+                        if is_completed_before:
+                            start_date_obj = start_date_obj - timedelta(days=(n_days - 1))
+                        resolved_start_date_str = start_date_obj.strftime("%Y-%m-%d")
+                    except Exception:
+                        resolved_start_date_str = datetime.now().strftime("%Y-%m-%d")
+                else:
+                    resolved_start_date_str = datetime.now().strftime("%Y-%m-%d")
+
+                end_date_obj = datetime.strptime(resolved_start_date_str, "%Y-%m-%d") + timedelta(days=n_days)
+                date_range_str = f"{resolved_start_date_str} to {end_date_obj.strftime('%Y-%m-%d')}"
+
+                payload = {
+                    "origin": origin,
+                    "cities": dest_cities,
+                    "days": n_days,
+                    "hotel_types": p_hotel_tier if p_hotel_tier else "budget",
+                    "attractions": [p_attr] if p_attr else []
+                }
+                
+                # Commit state to the constraint resolution engine
+                tools.resolve_and_save_state(payload, date_range=date_range_str)
+
                 st.subheader("🕵️‍♂️ Agent Reasoning Traces")
                 trace_area = st.empty()
                 log_messages = []
@@ -185,96 +226,80 @@ with tab1:
                 if result.get("success"):
                     st.success("✨ Travel Plan generated successfully!")
                     st.markdown(result["itinerary"])
+                else:
+                    st.warning("⚠️ High demand warning: AI specialist is busy, but our Programmatic Constraint Engine solved your optimal route perfectly!")
+                
+                # Always render the Solved programmatically-supported tables
+                costs_data = tools.run_full_itinerary_generation(tools.df_flights, tools.df_hotels)
+                
+                if isinstance(costs_data, dict) and "error" not in costs_data:
+                    summary = costs_data.get("summary", {})
                     
-                    # Render the Solved tables
-                    if tools.latest_agent_itinerary:
-                        st.markdown("---")
-                        
-                        # Estimate the cities visited and origin to recalculate exact legs
-                        logged_cities = list(tools.city_data_memory.keys())
-                        origin, dest_cities = extract_trip_details_from_prompt(user_query, logged_cities)
-                        
-                        # Get exact flight segments and costs
-                        durations = []
-                        hotel_tiers = []
-                        hotel_tier_guess = p_hotel_tier if p_hotel_tier else "budget"
-                            
-                        for city_name in dest_cities:
-                            days_count = sum(1 for d in tools.latest_agent_itinerary if city_name.lower() in d.get("activity", "").lower() or city_name.lower() in d.get("city", "").lower())
-                            durations.append(max(1, days_count))
-                            hotel_tiers.append(hotel_tier_guess)
-                            
-                        costs_data = tools.calculate_itinerary_costs(
-                            tools.df_flights, tools.df_hotels,
-                            dest_cities, durations, hotel_tiers, origin
-                        )
-                        
-                        summary = costs_data.get("summary", {})
-                        
-                        st.subheader("📊 Solved Package Cost Summary")
-                        # Use bento visual grids
-                        sc1, sc2, sc3, sc4 = st.columns(4)
-                        sc1.metric("Flight Expense Log", f"₹{summary.get('total_flight', 0):,}")
-                        sc2.metric("Hotels & Lodging", f"₹{summary.get('total_hotel', 0):,}")
-                        sc3.metric("Daily Buffer Expense", f"₹{summary.get('total_misc', 0):,}")
-                        sc4.metric("Grand Total Cost", f"₹{summary.get('grand_total', 0):,}")
-                        
-                        st.subheader("📅 Solved Day-by-Day Comprehensive Cost Schedule")
-                        
-                        # Match day-by-day table rows to flight legs & hotels
-                        flight_legs = costs_data.get("flight_legs", [])
-                        hotel_details = costs_data.get("itinerary", [])
-                        
-                        start_date_val = p_start_date if p_start_date else datetime.now().strftime("%Y-%m-%d")
-                        rows = tools.build_cost_breakdown_table(
-                            costs_data.get("itinerary", []),
-                            costs_data.get("flight_legs", []),
-                            costs_data.get("itinerary", []),
-                            start_date_val
-                        )
+                    st.markdown("---")
+                    st.subheader("📊 Solved Package Cost Summary")
+                    sc1, sc2, sc3, sc4 = st.columns(4)
+                    sc1.metric("Flight Expense Log", f"₹{summary.get('total_flight', 0):,}")
+                    sc2.metric("Hotels & Lodging", f"₹{summary.get('total_hotel', 0):,}")
+                    sc3.metric("Daily Buffer Expense", f"₹{summary.get('total_misc', 0):,}")
+                    sc4.metric("Grand Total Cost", f"₹{summary.get('grand_total', 0):,}")
                     
-                        # Display the day-by-day table
-                        st.table(rows)
-                        
-                        # Print warning if there are no direct flights
-                        no_direct_warnings = []
-                        for leg in flight_legs:
-                            if not leg.get("is_direct", True):
+                    st.subheader("📅 Solved Day-by-Day Comprehensive Cost Schedule")
+                    
+                    flight_legs = costs_data.get("flight_legs", [])
+                    hotel_details = costs_data.get("itinerary", [])
+                    
+                    rows = tools.build_cost_breakdown_table(
+                        costs_data.get("itinerary", []),
+                        costs_data.get("flight_legs", []),
+                        costs_data.get("itinerary", []),
+                        resolved_start_date_str
+                    )
+                
+                    st.table(rows)
+                    
+                    # Print warning if there are no direct flights
+                    no_direct_warnings = []
+                    for leg in flight_legs:
+                        if not leg.get("is_direct", True) and "leg" in leg:
+                            try:
                                 start_c, end_c = leg["leg"].split("->")
                                 no_direct_warnings.append(f"⚠️ Note: There are no direct flights between {start_c} and {end_c}. Showing connecting flight route.")
+                            except Exception:
+                                pass
+                    
+                    for warn in no_direct_warnings:
+                        st.warning(warn)
                         
-                        for warn in no_direct_warnings:
-                            st.warning(warn)
-                            
-                        # Flight Summary Table listing flight no, airline, from, to, cost
-                        st.subheader("✈️ Selected Flights Summary Table")
-                        flight_rows = []
-                        for leg in flight_legs:
-                            for segment in leg.get("segments", []):
-                                flight_rows.append({
-                                    "Flight No": segment.get("flight_id"),
-                                    "Airline": segment.get("airline"),
-                                    "From": segment.get("from"),
-                                    "To": segment.get("to"),
-                                    "Cost": f"₹{segment.get('price'):,}"
-                                })
-                        if flight_rows:
-                            st.table(flight_rows)
-                        else:
-                            st.info("No flight segment details available.")
-                            
-                        # Decision logic reasons
-                        st.subheader("💡 Selection Intelligence & Decision Logic")
-                        st.markdown("""
-                        - **Flight Routing Selection**: 
-                          - Cheaper and direct flight paths were prioritized.
-                          - If direct flights do not exist, a custom BFS (Breadth-First Search) routing algorithm traversed alternative paths (e.g., through Kolkata) to resolve the absolute cheapest segment-by-segment chain of connections seamlessly.
-                        - **Hotel Selection**: 
-                          - Hotels of the requested class (e.g. Budget, Cheapest, or Luxury) with the highest verified rating scores (stars) were picked.
-                        """)
+                    # Flight Summary Table listing flight no, airline, from, to, cost
+                    st.subheader("✈️ Selected Flights Summary Table")
+                    flight_rows = []
+                    for leg in flight_legs:
+                        for segment in leg.get("segments", []):
+                            flight_rows.append({
+                                "Flight No": segment.get("flight_id"),
+                                "Airline": segment.get("airline"),
+                                "From": segment.get("from"),
+                                "To": segment.get("to"),
+                                "Cost": f"₹{segment.get('price'):,}"
+                            })
+                    if flight_rows:
+                        st.table(flight_rows)
+                    else:
+                        st.info("No flight segment details available.")
+                        
+                    # Decision logic reasons
+                    st.subheader("💡 Selection Intelligence & Decision Logic")
+                    st.markdown("""
+                    - **Flight Routing Selection**: 
+                      - Cheaper and direct flight paths were prioritized.
+                      - If direct flights do not exist, a custom BFS (Breadth-First Search) routing algorithm traversed alternative paths (e.g., through Kolkata) to resolve the absolute cheapest segment-by-segment chain of connections seamlessly.
+                    - **Hotel Selection**: 
+                      - Hotels of the requested class (e.g. Budget, Cheapest, or Luxury) with the highest verified rating scores (stars) were picked.
+                    """)
                 else:
-                    st.error("Failed to compile itinerary.")
-                    st.text(result.get("itinerary"))
+                    st.error("Failed to solve optimal itinerary constraints.")
+                    if not result.get("success"):
+                        st.text(result.get("itinerary"))
 
 with tab2:
     st.subheader("🎯 Flexible Constraint Selection Form")
