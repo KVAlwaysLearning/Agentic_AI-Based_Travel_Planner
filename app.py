@@ -5,8 +5,8 @@ import tools
 from datetime import datetime, date, timedelta
 
 # Set Streamlit Page Config
-st.set_page_config(page_title="Indica Odyssey Planner", layout="wide")
-st.title("🧳 Indica Odyssey Planner v3.0")
+st.set_page_config(page_title=" AI-Based Travel Planning Assistant", layout="wide")
+st.title("")
 
 # Clear State Memory Sidebar controller
 with st.sidebar:
@@ -18,7 +18,7 @@ with st.sidebar:
     st.info(f"Stored cost logs count: {len(tools.city_data_memory)} records")
 
 # Primary Tab Navigation 
-tab1, tab2 = st.tabs(["💬 AI Prompt Planner", "🎛️ Constraint Control Panel (Form Inputs)"])
+tab1, tab2 = st.tabs(["💬 AI Prompt Planner", "📔 Constraint Control Panel (Form Inputs)"])
 
 # Define actual master lists from database
 available_cities = ["Delhi", "Mumbai", "Hyderabad", "Bangalore", "Chennai", "Goa", "Kolkata", "Jaipur"]
@@ -160,8 +160,8 @@ def extract_constraints_from_prompt(prompt):
     return days, start_date, hotel_tier, attraction, is_completed_before
 
 with tab1:
-    st.subheader("🖊️ AI Freeform Prompt Planner")
-    st.markdown("Let our Indica Specialist AI Agent plan your trip dynamically based on raw requirements!")
+    st.subheader("💬 AI Freeform Prompt Planner")
+    st.markdown("Let our Specialist AI Agent plan your trip dynamically based on raw requirements!")
     
     user_query = st.text_area(
         "Where do you want to go? Include dates, cities, and budget.",
