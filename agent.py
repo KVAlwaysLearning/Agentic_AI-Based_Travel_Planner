@@ -1,4 +1,20 @@
-
+import os
+import json
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import StructuredTool
+from langchain_core.callbacks import BaseCallbackHandler
+ 
+# Use the classic paths for AgentExecutor and create_tool_calling_agent
+try:
+    from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+except ImportError:
+    from langchain.agents import AgentExecutor, create_tool_calling_agent
+ 
+import tools
+ 
+class AgentTracerCallbackHandler(BaseCallbackHandler):
+    """
     Custom LangChain Callback Handler to hook into agent actions 
     and bridge tool calls to the Streamlit tracing UI.
     """
