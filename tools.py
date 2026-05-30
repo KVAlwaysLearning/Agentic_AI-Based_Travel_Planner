@@ -350,39 +350,56 @@ def resolve_and_save_state(user_inputs, date_range=None):
 
     # Now resolve destination cities
     user_cities = user_inputs.get('cities')
-    is_cities_flexible = (user_cities == "Flexible") or (user_cities == "flexible") or (user_cities is None) or (isinstance(user_cities, list) and (len(user_cities) == 0 or "Flexible" in user_cities or "flexible" in user_cities))
+    is_flexible_active = False
+    explicit_cities = []
+    
+    if user_cities is None:
+        is_flexible_active = True
+    elif isinstance(user_cities, str):
+        if user_cities.strip().lower() in ['flexible', '']:
+            is_flexible_active = True
+        else:
+            explicit_cities = [user_cities.strip()]
+    elif isinstance(user_cities, list):
+        cleaned_list = [c.strip() for c in user_cities if c and c.strip()]
+        if not cleaned_list:
+            is_flexible_active = True
+        else:
+            for c in cleaned_list:
+                if c.lower() == 'flexible':
+                    is_flexible_active = True
+                else:
+                    explicit_cities.append(c)
+    else:
+        is_flexible_active = True
 
-    resolved_cities = []
-    if not is_cities_flexible:
-        if isinstance(user_cities, str):
-            resolved_cities = [user_cities]
-        elif isinstance(user_cities, list):
-            resolved_cities = [c for c in user_cities if c not in ["Flexible", "flexible", ""]]
+    resolved_cities = list(explicit_cities)
 
-    # Under "Flexible Constraint Selection Form": fill up cities if less than the threshold
-    if len(resolved_cities) < target_num_cities:
-        origin_city = resolved.get('origin', 'Delhi')
-        if origin_city in ['Flexible', 'flexible', None]:
-            origin_city = 'Delhi'
-            
-        domain_cities = domains.get('cities', ALL_CITIES)
-        if not domain_cities:
-            domain_cities = ALL_CITIES
-            
-        # Add matching extra cities
-        extra_options = [c for c in domain_cities if c != origin_city and c not in resolved_cities]
-        for c in extra_options:
-            if len(resolved_cities) >= target_num_cities:
-                break
-            resolved_cities.append(c)
-            
-        # Fallback if domain_cities didn't yield enough
+    # Under "Flexible Constraint Selection Form": fill up cities if less than the threshold only if "Flexible" is active
+    if is_flexible_active:
         if len(resolved_cities) < target_num_cities:
-            for c in ALL_CITIES:
+            origin_city = resolved.get('origin', 'Delhi')
+            if origin_city in ['Flexible', 'flexible', None]:
+                origin_city = 'Delhi'
+                
+            domain_cities = domains.get('cities', ALL_CITIES)
+            if not domain_cities:
+                domain_cities = ALL_CITIES
+                
+            # Add matching extra cities
+            extra_options = [c for c in domain_cities if c != origin_city and c not in resolved_cities]
+            for c in extra_options:
                 if len(resolved_cities) >= target_num_cities:
                     break
-                if c != origin_city and c not in resolved_cities:
-                    resolved_cities.append(c)
+                resolved_cities.append(c)
+                
+            # Fallback if domain_cities didn't yield enough
+            if len(resolved_cities) < target_num_cities:
+                for c in ALL_CITIES:
+                    if len(resolved_cities) >= target_num_cities:
+                        break
+                    if c != origin_city and c not in resolved_cities:
+                        resolved_cities.append(c)
 
     # Ensure a final fallback city if empty
     if not resolved_cities:
