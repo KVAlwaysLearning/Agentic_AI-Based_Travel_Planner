@@ -1,20 +1,4 @@
-import os
-import json
-from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.tools import StructuredTool
-from langchain_core.callbacks import BaseCallbackHandler
 
-# Use the classic paths for AgentExecutor and create_tool_calling_agent
-try:
-    from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
-except ImportError:
-    from langchain.agents import AgentExecutor, create_tool_calling_agent
-
-import tools
-
-class AgentTracerCallbackHandler(BaseCallbackHandler):
-    """
     Custom LangChain Callback Handler to hook into agent actions 
     and bridge tool calls to the Streamlit tracing UI.
     """
@@ -25,11 +9,11 @@ class AgentTracerCallbackHandler(BaseCallbackHandler):
         self.step = 0
         self.current_tool_name = None
         self.current_tool_args = None
-
+ 
     def on_llm_start(self, serialized, prompts, **kwargs):
         if self.callback_log:
             self.callback_log("agent_thinking", "Agent reasoning loop running...", {})
-
+ 
     def on_agent_action(self, action, **kwargs):
         self.step += 1
         self.current_tool_name = action.tool
@@ -41,7 +25,7 @@ class AgentTracerCallbackHandler(BaseCallbackHandler):
                 f"🤖 Agent decided to run **{self.current_tool_name}** with arguments: `{json.dumps(self.current_tool_args)}`", 
                 {"tool": self.current_tool_name, "args": self.current_tool_args}
             )
-
+ 
     def on_tool_end(self, output, **kwargs):
         output_dict = {}
         if isinstance(output, str):
@@ -69,8 +53,8 @@ class AgentTracerCallbackHandler(BaseCallbackHandler):
             "arguments": self.current_tool_args,
             "result": output_dict
         })
-
-
+ 
+ 
 def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     """
     Runs the LangChain Groq Travel Agent.
@@ -110,7 +94,8 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     
     system_instruction = (
         "You are an Elite Travel Specialist. For multi-city trips, process every flight leg and every destination city separately.\n\n"
-        "1. For each destination, call 'search_flights' and 'recommend_hotels'.\n"
+        "1. For EACH destination city — regardless of how short the trip is — call 'search_flights' AND 'recommend_hotels'. "
+        "Never skip a city's hotel search even for 1-night stops. After each 'recommend_hotels' call, output ALL hotels from the 'matches' list, not just the top one.\n"
         "2. For every cost found, call 'log_city_data' to save the value.\n"
         "3. Compile the daily details into a JSON list of dictionaries.\n"
         "4. Call 'generate_itinerary_tables' with your JSON list.\n"
@@ -133,7 +118,9 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
         "- **Price**: ₹[Price]\n"
         "- **Duration**: [Duration]\n\n"
         "## 🏨 RECOMMENDED HOTELS\n"
-        "(List hotels for EVERY destination city. Repeat for each city:)\n"
+        "CRITICAL RULE: Call 'recommend_hotels' for EVERY destination city without exception, even on short 1–2 day trips.\n"
+        "After each tool call, list ALL hotels returned in the 'matches' field — do NOT show only the top-rated one.\n"
+        "(Repeat the following block for every hotel in every destination city:)\n"
         "- **Hotel Name**: [Hotel Name]\n"
         "- **Address**: [Address]\n"
         "- **Star Rating**: [Rating]/5\n"
@@ -194,3 +181,4 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
             "itinerary": f"Error running agent: {str(err)}",
             "traces": tracer.traces
         }
+ 
