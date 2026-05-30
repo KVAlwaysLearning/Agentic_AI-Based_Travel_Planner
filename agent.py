@@ -110,15 +110,19 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     
     system_instruction = (
         "You are an Elite Travel Specialist. For multi-city trips, process every flight leg and every destination city separately.\n\n"
-        "1. For each destination, call 'search_flights' and 'recommend_hotels'.\n"
-        "2. For every cost found, call 'log_city_data' to save the value.\n"
-        "3. Compile the daily details into a JSON list of dictionaries.\n"
-        "4. Call 'generate_itinerary_tables' with your JSON list.\n"
-        "5. IMPORTANT: Print ONLY the Markdown returned by the tool. DO NOT manually create tables or perform math in your response.\n\n"
+        "MANDATORY TOOL SEQUENCE — repeat for EVERY destination city before writing any output:\n"
+        "  For city 1: call search_flights, then call recommend_hotels.\n"
+        "  For city 2: call search_flights, then call recommend_hotels.\n"
+        "  ... and so on for every city, no matter how short the trip.\n"
+        "  Then call log_city_data for each cost, then generate_itinerary_tables.\n\n"
+        "1. After all tool calls are done, compile the daily details into a JSON list of dictionaries.\n"
+        "2. Call 'generate_itinerary_tables' with your JSON list.\n"
+        "3. IMPORTANT: Print ONLY the Markdown returned by the tool. DO NOT manually create tables or perform math in your response.\n\n"
         "## FLIGHT SELECTION RULES:\n"
         "- Check for direct flights first. If there are no direct flights between two cities, you MUST add a line: '⚠️ Note: There are no direct flights between [Origin] and [Destination]. Showing connecting flight route.'\n"
-        "- Then list EVERY single connecting flight segment with: Flight number, airline, from city, to city, price, departure and arrival times, even if there is no stay in the intermediate connecting city.\n"
-        "- For the day-by-day table, the travel day row must show the CUMULATIVE flight cost of all connecting flights combined.\n""- In the ✈️ SELECTED FLIGHT OPTIONS text section, when listing a connecting route, show each segment individually (airline, route, schedule, per-segment price), then add a final line: **Total Flight Cost: ₹[sum of all segments]**. Never show only a single segment price as the cost for the whole route.\n\n"
+        "- Then list EVERY single connecting flight segment with: Flight number, airline, from city, to city, its individual price, departure and arrival times.\n"
+        "- For connecting routes, always add after all segments: '**Total Flight Cost: ₹[sum of all segment prices]**'. Use this total, not any individual segment price.\n"
+        "- For the day-by-day table, the travel day row must show the CUMULATIVE flight cost of all connecting flights combined.\n\n"
         "## 📑 TRIP SUMMARY\n"
         "- **Origin**: [Origin City]\n"
         "- **Destination**: [Destination Cities, comma-separated]\n"
@@ -130,16 +134,19 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
         "- **Segment [X]**: **From**: [City] -> **To**: [City]\n"
         "- **Airline & Flight**: [Airline & Flight ID] (Selected because [Cheapest/Fastest/Balanced])\n"
         "- **Schedule**: [Departure Time] -> [Arrival Time]\n"
-        "- **Price**: ₹[Price]\n"
-        "- **Duration**: [Duration]\n\n"
+        "- **Price**: ₹[per-segment price]\n"
+        "- **Duration**: [Duration]\n"
+        "(For connecting routes only, add after all segments: **Total Flight Cost: ₹[sum]**)\n\n"
         "## 🏨 RECOMMENDED HOTELS\n"
-        "(List hotels for EVERY destination city. Repeat for each city:)\n"
-        "- **Hotel Name**: [Hotel Name]\n"
-        "- **Address**: [Address]\n"
-        "- **Star Rating**: [Rating]/5\n"
-        "- **Price**: ₹[Price]/night\n"
-        "- **Selected Amenities**: [Free Wi-Fi, Pool, etc.]\n"
-        "- **Why selected**: [Reasoning based on ratings/price]\n\n"
+        "You MUST show exactly one hotel per destination city using hotel_name and price_per_night from the recommend_hotels tool result.\n"
+        "DO NOT copy the tool summary field into Why selected — write your own brief reason based on stars and price.\n"
+        "(Repeat once per destination city:)\n"
+        "- **Hotel Name**: [hotel_name from tool]\n"
+        "- **Address**: [address from tool]\n"
+        "- **Star Rating**: [stars from tool]/5\n"
+        "- **Price**: ₹[price_per_night from tool]/night\n"
+        "- **Selected Amenities**: [amenities from tool]\n"
+        "- **Why selected**: [Your own one-sentence reason — do NOT paste the tool summary here]\n\n"
         "## 📅 DAY-BY-DAY ITINERARY\n"
         "(YOU MUST PROVIDE A SECTION FOR EVERY DAY. DO NOT SKIP DAYS:)\n"
         "### Day [X]: [Catchy Title]\n"
@@ -165,7 +172,7 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
         agent=agent_runnable,
         tools=langchain_tools,
         verbose=True,
-        max_iterations=10,
+        max_iterations=25,
         handle_parsing_errors=True
     )
     
