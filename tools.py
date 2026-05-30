@@ -3,7 +3,76 @@ import json
 import sqlite3
 import pandas as pd
 import collections
+import requests
 from datetime import datetime, timedelta
+
+class WeatherService:
+    # 1. Hard-coded reference data
+    CITY_COORDS = pd.DataFrame([
+        {"city": "Delhi", "lat": 28.613895, "lon": 77.209006},
+        {"city": "Mumbai", "lat": 19.054999, "lon": 72.869203},
+        {"city": "Goa", "lat": 15.300454, "lon": 74.085513},
+        {"city": "Bangalore", "lat": 12.976794, "lon": 77.590082},
+        {"city": "Chennai", "lat": 13.083694, "lon": 80.270186},
+        {"city": "Hyderabad", "lat": 17.360589, "lon": 78.474061},
+        {"city": "Kolkata", "lat": 22.572646, "lon": 88.363895},
+        {"city": "Jaipur", "lat": 26.915458, "lon": 75.818982}
+    ])
+
+    @staticmethod
+    def get_weather_by_city(city_name, date_str):
+        """
+        Fetches weather by city name and date using the hard-coded dataframe.
+        """
+        # 2. Lookup coordinates
+        row = WeatherService.CITY_COORDS[WeatherService.CITY_COORDS['city'].str.lower() == city_name.lower()]
+        
+        if row.empty:
+            return {"error": f"City '{city_name}' not found in database."}
+        
+        lat, lon = row.iloc[0]['lat'], row.iloc[0]['lon']
+        
+        # 3. Existing Weather API Logic
+        try:
+            is_future = datetime.strptime(date_str, "%Y-%m-%d") > datetime.now()
+        except Exception:
+            is_future = True
+            
+        base_url = "https://archive-api.open-meteo.com/v1/archive" if not is_future else "https://api.open-meteo.com/v1/forecast"
+        
+        params = {
+            "latitude": lat, "longitude": lon,
+            "start_date": date_str, "end_date": date_str,
+            "daily": "temperature_2m_max,temperature_2m_min,weather_code,wind_speed_10m_max,relative_humidity_2m_mean",
+            "timezone": "auto"
+        }
+        
+        try:
+            response = requests.get(base_url, params=params, timeout=5).json()
+            daily = response.get('daily', {})
+            weather_map = {
+                0: "Sunny", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
+                51: "Drizzle", 61: "Rain", 71: "Snow", 95: "Thunderstorm"
+            }
+            codes = daily.get('weather_code', [0])
+            code = codes[0] if codes else 0
+            
+            max_temps = daily.get('temperature_2m_max', [28])
+            min_temps = daily.get('temperature_2m_min', [20])
+            humidities = daily.get('relative_humidity_2m_mean', [60])
+            wind_speeds = daily.get('wind_speed_10m_max', [10])
+            
+            return {
+                "city": city_name,
+                "date": date_str,
+                "status": weather_map.get(code, "Pleasant") if code is not None else "Pleasant",
+                "max_temp": max_temps[0] if max_temps else 28,
+                "min_temp": min_temps[0] if min_temps else 20,
+                "humidity": humidities[0] if humidities else 60,
+                "wind_speed": wind_speeds[0] if wind_speeds else 10
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
 # --- State Management for Costs ---
 city_data_memory = {}
@@ -235,24 +304,92 @@ def resolve_and_save_state(user_inputs, date_range=None):
     if date_range and 'cities' in domains:
         domains['cities'] = filter_by_weather(domains['cities'], date_range)
     
-    # Resolve values by defaulting if 'Flexible' or empty lists
+    # Resolve values by defaulting if 'Flexible' or empty lists (other than 'cities')
     resolved = {}
-    for k in domains.keys():
+    for k in ['origin', 'days', 'hotel_types', 'attractions']:
         user_val = user_inputs.get(k)
         is_flexible = (user_val == "Flexible") or (user_val == "flexible") or (user_val is None) or (isinstance(user_val, list) and (len(user_val) == 0 or "Flexible" in user_val or "flexible" in user_val))
         
         if not is_flexible:
             resolved[k] = user_val
         else:
-            if k == 'cities':
-                # Settle on first 2 cities of domain path
-                resolved[k] = domains[k][:2] if len(domains[k]) >= 2 else (domains[k][:1] if domains[k] else ["Mumbai"])
+            if k == 'days':
+                # Fallback days based on date_range if possible
+                days_int_temp = None
+                if date_range:
+                    try:
+                        parts = date_range.split(" to ")
+                        if len(parts) == 2:
+                            d1 = datetime.strptime(parts[0].strip(), "%Y-%m-%d")
+                            d2 = datetime.strptime(parts[1].strip(), "%Y-%m-%d")
+                            days_int_temp = (d2 - d1).days + 1
+                    except Exception:
+                        pass
+                resolved[k] = days_int_temp if days_int_temp is not None else 5
+            elif k == 'origin':
+                resolved[k] = domains[k][0] if len(domains[k]) > 0 else "Delhi"
             else:
                 resolved[k] = domains[k][0] if len(domains[k]) > 0 else None
+
+    # Determine desired target number of cities based on selected days:
+    try:
+        days_int = int(resolved['days'])
+    except Exception:
+        days_int = 5
+
+    if days_int <= 2:
+        target_num_cities = 1
+    elif days_int in [3, 4]:
+        target_num_cities = 2
+    elif days_int in [5, 6]:
+        target_num_cities = 3
+    elif days_int in [7, 8]:
+        target_num_cities = 4
+    else: # days_int > 8
+        target_num_cities = 4 # plan for 4 or more cities if possible
+
+    # Now resolve destination cities
+    user_cities = user_inputs.get('cities')
+    is_cities_flexible = (user_cities == "Flexible") or (user_cities == "flexible") or (user_cities is None) or (isinstance(user_cities, list) and (len(user_cities) == 0 or "Flexible" in user_cities or "flexible" in user_cities))
+
+    resolved_cities = []
+    if not is_cities_flexible:
+        if isinstance(user_cities, str):
+            resolved_cities = [user_cities]
+        elif isinstance(user_cities, list):
+            resolved_cities = [c for c in user_cities if c not in ["Flexible", "flexible", ""]]
+
+    # Under "Flexible Constraint Selection Form": fill up cities if less than the threshold
+    if len(resolved_cities) < target_num_cities:
+        origin_city = resolved.get('origin', 'Delhi')
+        if origin_city in ['Flexible', 'flexible', None]:
+            origin_city = 'Delhi'
             
-    # Normalize cities to a list
-    if not isinstance(resolved.get('cities'), list):
-         resolved['cities'] = [resolved['cities']] if resolved['cities'] else []
+        domain_cities = domains.get('cities', ALL_CITIES)
+        if not domain_cities:
+            domain_cities = ALL_CITIES
+            
+        # Add matching extra cities
+        extra_options = [c for c in domain_cities if c != origin_city and c not in resolved_cities]
+        for c in extra_options:
+            if len(resolved_cities) >= target_num_cities:
+                break
+            resolved_cities.append(c)
+            
+        # Fallback if domain_cities didn't yield enough
+        if len(resolved_cities) < target_num_cities:
+            for c in ALL_CITIES:
+                if len(resolved_cities) >= target_num_cities:
+                    break
+                if c != origin_city and c not in resolved_cities:
+                    resolved_cities.append(c)
+
+    # Ensure a final fallback city if empty
+    if not resolved_cities:
+        origin_city = resolved.get('origin', 'Delhi')
+        resolved_cities = ["Mumbai"] if origin_city != "Mumbai" else ["Delhi"]
+
+    resolved['cities'] = resolved_cities
 
     # Normalize hotel_types
     h_type = resolved.get('hotel_types', 'budget')
@@ -262,12 +399,7 @@ def resolve_and_save_state(user_inputs, date_range=None):
 
     # Keep durations/hotel_tiers aligned with days and hotel_types
     num_cities = len(resolved['cities'])
-    days_val = resolved.get('days')
-    try:
-        days_int = int(days_val)
-    except Exception:
-        days_int = None
-        
+    
     if days_int is not None and num_cities > 0:
         total_nights = max(1, days_int - 1)
         base_nights = total_nights // num_cities
@@ -414,7 +546,21 @@ def search_places(attraction_type: str) -> dict:
     return {"success": True, "attractions": matches}
 
 def lookup_weather(city: str, start_date: str = None, end_date: str = None) -> dict:
-    """Retrieves generic pleasant meteorological outline."""
+    """Retrieves actual meteorological outline from WeatherService."""
+    date_to_use = start_date if start_date else datetime.now().strftime("%Y-%m-%d")
+    weather_data = WeatherService.get_weather_by_city(city, date_to_use)
+    if weather_data and "error" not in weather_data:
+        status = weather_data.get('status', 'Sunny')
+        max_temp = weather_data.get('max_temp', 28)
+        humidity = weather_data.get('humidity', 60)
+        return {
+            "success": True,
+            "city": city,
+            "summary": f"Weather for {city} during {start_date or date_to_use} is {status}. Temp: {max_temp}°C, Humidity: {humidity}%.",
+            "daily_forecast": [
+                {"date": date_to_use, "temp": f"{max_temp}°C", "humidity": f"{humidity}%", "condition": status}
+            ]
+        }
     return {
         "success": True, 
         "city": city,
@@ -849,13 +995,25 @@ def build_itinerary_markdown_report_from_state(costs_data, origin, dest_cities, 
         md.append(f"- **Selected Amenities**: {amenities_str}")
         md.append(f"- **Why selected**: Picked the highest-rated verified lodging of {hotel_category} class.\n")
         
+    # Extract real start date from date_range if available
+    start_date_str = None
+    if date_range:
+        try:
+            parts = date_range.split(" to ")
+            if len(parts) >= 1:
+                start_date_str = parts[0].strip()
+        except Exception:
+            pass
+    if not start_date_str:
+        start_date_str = datetime.now().strftime("%Y-%m-%d")
+
     # Day-by-Day Itinerary
     md.append("## 📅 DAY-BY-DAY ITINERARY")
     table_rows = build_cost_breakdown_table(
         costs_data.get("itinerary", []),
         costs_data.get("flight_legs", []),
         costs_data.get("itinerary", []),
-        datetime.now().strftime("%Y-%m-%d") # date doesn't matter for names
+        start_date_str
     )
     
     # We will fetch places per city to print unique nice details
@@ -871,10 +1029,11 @@ def build_itinerary_markdown_report_from_state(costs_data, origin, dest_cities, 
     for index, day_data in enumerate(table_rows):
         city = day_data['city']
         day_num = index + 1
+        weather_str = day_data.get('weather', 'Sunny, 28°C')
         
         if "Flight travel from" in day_data['activity']:
             md.append(f"### Day {day_num}: Departure & Return")
-            md.append("- **Weather**: Sunny, 28°C")
+            md.append(f"- **Weather**: {weather_str}")
             md.append("- **Morning**: Check out from the lodging and pack souvenirs.")
             md.append("- **Afternoon**: Transit to Airport and complete luggage check-in.")
             md.append(f"- **Evening**: Board flight from **{city}** back to **{origin}**.\n")
@@ -891,7 +1050,7 @@ def build_itinerary_markdown_report_from_state(costs_data, origin, dest_cities, 
             place_counters[city] = c_idx + 2
             
             md.append(f"### Day {day_num}: Unveiling {city}")
-            md.append("- **Weather**: Sunny, 28°C")
+            md.append(f"- **Weather**: {weather_str}")
             md.append(f"- **Morning**: Exploring the spectacular **{p1_name}** (Rated {p1_rating}/5) for breath-taking architectural marvels.")
             md.append(f"- **Afternoon**: Enjoying a delicious lunch in the vicinity and visiting **{p2_name}** (Rated {p2_rating}/5).")
             md.append("- **Evening**: Strolling through local colorful markets, tasting local street food, and relaxing at night cafes.\n")
@@ -900,7 +1059,7 @@ def build_itinerary_markdown_report_from_state(costs_data, origin, dest_cities, 
 
 def build_cost_breakdown_table(itinerary_data, flight_legs, hotel_details, start_date):
     """
-    Constructs the day-by-day table data structure.
+    Constructs the day-by-day table data structure with real weather.
     - itinerary_data: From calculate_itinerary_costs() output dictionary
     - flight_legs: From calculate_itinerary_costs() flight legs list
     - hotel_details: From calculate_itinerary_costs() itinerary details list
@@ -931,17 +1090,39 @@ def build_cost_breakdown_table(itinerary_data, flight_legs, hotel_details, start
         
         for d in range(nights):
             f_cost = flight_cost if d == 0 else 0
+            day_date_str = (start_date_obj + timedelta(days=current_day-1)).strftime("%Y-%m-%d")
+            
+            # Fetch weather from weather service
+            weather_data = WeatherService.get_weather_by_city(city, day_date_str)
+            if weather_data and "error" not in weather_data:
+                status = weather_data.get('status', 'Sunny')
+                max_temp = weather_data.get('max_temp', 28)
+                humidity = weather_data.get('humidity', 60)
+                try:
+                    max_temp_val = int(round(float(max_temp)))
+                except Exception:
+                    max_temp_val = max_temp
+                try:
+                    humidity_val = int(round(float(humidity)))
+                except Exception:
+                    humidity_val = humidity
+                    
+                weather_str = f"{status}, {max_temp_val}°C"
+                th_str = f"{max_temp_val}°C / {humidity_val}%"
+            else:
+                weather_str = "Sunny, 28°C"
+                th_str = "28°C / 60%"
             
             table_rows.append({
                 "day_of_trip": f"Day {current_day}",
-                "date": (start_date_obj + timedelta(days=current_day-1)).strftime("%Y-%m-%d"),
+                "date": day_date_str,
                 "city": city,
                 "activity": f"Exploring attractions in {city}",
                 "flight_cost": int(f_cost),
                 "hotel_cost": int(hotel_per_night),
                 "misc_expense": int(misc_per_night),
-                "weather": "Sunny, 28°C",
-                "temp_humidity": "28°C / 60%"
+                "weather": weather_str,
+                "temp_humidity": th_str
             })
             current_day += 1
 
@@ -953,16 +1134,37 @@ def build_cost_breakdown_table(itinerary_data, flight_legs, hotel_details, start
     last_city = hotel_details[-1]['city'] if hotel_details else "Destination"
     avg_misc = int(sum(c['misc_cost']/c['nights'] for c in hotel_details if c['nights'] > 0) / len(hotel_details)) if hotel_details else 1750
 
+    last_city_date_str = (start_date_obj + timedelta(days=current_day-1)).strftime("%Y-%m-%d")
+    weather_data_last = WeatherService.get_weather_by_city(last_city, last_city_date_str)
+    if weather_data_last and "error" not in weather_data_last:
+        status = weather_data_last.get('status', 'Sunny')
+        max_temp = weather_data_last.get('max_temp', 28)
+        humidity = weather_data_last.get('humidity', 60)
+        try:
+            max_temp_val = int(round(float(max_temp)))
+        except Exception:
+            max_temp_val = max_temp
+        try:
+            humidity_val = int(round(float(humidity)))
+        except Exception:
+            humidity_val = humidity
+            
+        weather_str_last = f"{status}, {max_temp_val}°C"
+        th_str_last = f"{max_temp_val}°C / {humidity_val}%"
+    else:
+        weather_str_last = "Sunny, 28°C"
+        th_str_last = "28°C / 60%"
+
     table_rows.append({
         "day_of_trip": f"Day {current_day}",
-        "date": (start_date_obj + timedelta(days=current_day-1)).strftime("%Y-%m-%d"),
+        "date": last_city_date_str,
         "city": last_city,
         "activity": f"Flight travel from {last_city} back to Origin",
         "flight_cost": int(return_flight_cost),
         "hotel_cost": 0,
         "misc_expense": int(avg_misc),
-        "weather": "Sunny, 28°C",
-        "temp_humidity": "28°C / 60%"
+        "weather": weather_str_last,
+        "temp_humidity": th_str_last
     })
     
     return table_rows
