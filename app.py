@@ -272,9 +272,9 @@ with tab1:
                     - **Hotel Selection**: 
                       - Hotels of the requested class (e.g. Budget, Cheapest, or Luxury) with the highest verified rating scores (stars) were picked.
                     """)
-            else:
-                st.error("Failed to compile itinerary.")
-                st.text(result.get("itinerary"))
+                else:
+                    st.error("Failed to compile itinerary.")
+                    st.text(result.get("itinerary"))
 
 with tab2:
     st.subheader("🎯 Flexible Constraint Selection Form")
