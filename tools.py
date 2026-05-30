@@ -5,7 +5,7 @@ import pandas as pd
 import collections
 import requests
 from datetime import datetime, timedelta
- 
+
 class WeatherService:
     # 1. Hard-coded reference data
     CITY_COORDS = pd.DataFrame([
@@ -18,7 +18,7 @@ class WeatherService:
         {"city": "Kolkata", "lat": 22.572646, "lon": 88.363895},
         {"city": "Jaipur", "lat": 26.915458, "lon": 75.818982}
     ])
- 
+
     @staticmethod
     def get_weather_by_city(city_name, date_str):
         """
@@ -73,16 +73,16 @@ class WeatherService:
             }
         except Exception as e:
             return {"error": str(e)}
- 
+
 # --- State Management for Costs ---
 city_data_memory = {}
 latest_agent_itinerary = []
- 
+
 def reset_memory():
     global city_data_memory, latest_agent_itinerary
     city_data_memory.clear()
     latest_agent_itinerary = []
- 
+
 def log_city_data(city: str, category: str, amount: int):
     """
     Saves the cost of a flight or hotel for a specific city.
@@ -93,13 +93,13 @@ def log_city_data(city: str, category: str, amount: int):
         city_data_memory[city] = {"flight": 0, "hotel": 0}
     city_data_memory[city][category] = int(amount)
     return f"Successfully logged {category} for {city}: ₹{amount}"
- 
+
 def get_all_costs():
     # Helper to return the total sums
     total_flights = sum(data.get("flight", 0) for data in city_data_memory.values())
     total_hotels = sum(data.get("hotel", 0) for data in city_data_memory.values())
     return total_flights, total_hotels
- 
+
 # --- Database Orchestrator & Data Loader ---
 def load_json_data(filename):
     paths_to_try = [
@@ -111,7 +111,7 @@ def load_json_data(filename):
             with open(p, "r", encoding="utf-8") as f:
                 return json.load(f)
     return []
- 
+
 def init_database():
     conn = sqlite3.connect('travel_itinerary.db')
     cursor = conn.cursor()
@@ -119,7 +119,7 @@ def init_database():
         DROP TABLE IF EXISTS flights;
         DROP TABLE IF EXISTS hotels;
         DROP TABLE IF EXISTS places;
- 
+
         CREATE TABLE IF NOT EXISTS flights (
             flight_id TEXT PRIMARY KEY,
             airline TEXT,
@@ -127,14 +127,14 @@ def init_database():
             destination TEXT,
             price INTEGER
         );
- 
+
         CREATE TABLE IF NOT EXISTS hotels (
             hotel_id TEXT PRIMARY KEY,
             name TEXT,
             city TEXT,
             price_per_night INTEGER
         );
- 
+
         CREATE TABLE IF NOT EXISTS places (
             place_id TEXT PRIMARY KEY,
             name TEXT,
@@ -143,7 +143,7 @@ def init_database():
         );
     ''')
     conn.commit()
- 
+
     # Load and ingest flights
     flights_data = load_json_data("flights.json")
     for item in flights_data:
@@ -159,7 +159,7 @@ def init_database():
             "INSERT OR IGNORE INTO hotels (hotel_id, name, city, price_per_night) VALUES (?, ?, ?, ?)",
             (item.get("hotel_id"), item.get("name"), item.get("city"), item.get("price_per_night"))
         )
- 
+
     # Load and ingest places
     places_data = load_json_data("places.json")
     for item in places_data:
@@ -167,28 +167,28 @@ def init_database():
             "INSERT OR IGNORE INTO places (place_id, name, city, rating) VALUES (?, ?, ?, ?)",
             (item.get("place_id"), item.get("name"), item.get("city"), item.get("rating"))
         )
- 
+
     conn.commit()
     conn.close()
- 
+
 # Build DB and retrieve dataframes
 init_database()
- 
+
 conn_read = sqlite3.connect('travel_itinerary.db')
 df_flights = pd.read_sql_query("SELECT * FROM flights", conn_read)
 df_hotels = pd.read_sql_query("SELECT * FROM hotels", conn_read)
 df_places = pd.read_sql_query("SELECT * FROM places", conn_read)
 conn_read.close()
- 
+
 # Clean and pre-process flight and hotel pricing data structures
 df_flights['price'] = pd.to_numeric(df_flights['price'], errors='coerce').fillna(0).astype(int)
 df_hotels['price_per_night'] = pd.to_numeric(df_hotels['price_per_night'], errors='coerce').fillna(0).astype(int)
 df_places['rating'] = df_places['rating'].astype(float).round(1)
- 
+
 # Sort hotels by city and classify them into cheapest/budget/luxurious categories
 df_hotels = df_hotels.sort_values(by=['city', 'price_per_night']).reset_index(drop=True)
 df_hotels['category'] = 'budget'
- 
+
 # Group by city and slice/mutate category values robustly without groupby-apply quirks
 for city, grp in df_hotels.groupby('city'):
     indices = grp.index
@@ -201,17 +201,17 @@ for city, grp in df_hotels.groupby('city'):
         df_hotels.loc[indices[1:-1], 'category'] = 'mid-range'
         mid_idx = len(indices) // 2
         df_hotels.loc[indices[mid_idx-1 : mid_idx+2], 'category'] = 'budget'
- 
+
 # Build Activities dataframe
 df_activities = df_places.groupby('name')['city'].apply(list).reset_index()
 df_activities = df_activities.rename(columns={'name': 'tourist_attraction', 'city': 'cities'})
 df_activities = df_activities.explode('cities').reset_index(drop=True)
 df_activities = df_activities.rename(columns={'cities': 'city'})
- 
+
 # Global constants initialized from the preprocessed DataFrames
 ALL_CITIES = df_hotels['city'].unique().tolist() if not df_hotels.empty else []
 ALL_ATTRS = df_activities['tourist_attraction'].unique().tolist() if not df_activities.empty else []
- 
+
 # --- Global Reference Trip State (Agent Decisions / Constraints) ---
 global_trip_state = {
     "origin": None,
@@ -222,7 +222,7 @@ global_trip_state = {
     "hotel_tiers": [],
     "attractions": []
 }
- 
+
 # --- Travel Helper lookups ---
 def get_reachable_cities(origin):
     """Checks the flight dataframe for all cities connected to the origin."""
@@ -230,7 +230,7 @@ def get_reachable_cities(origin):
         return []
     reachable = df_flights[df_flights['origin'] == origin]['destination'].unique().tolist()
     return reachable
- 
+
 def get_cities_by_itinerary_limit(days):
     """Logic: Fewer days mean fewer cities."""
     if days < 3: 
@@ -238,22 +238,22 @@ def get_cities_by_itinerary_limit(days):
     if days < 7: 
         return ALL_CITIES[:3]
     return ALL_CITIES
- 
+
 def get_cities_with_attraction(attr_name):
     """Filters cities that contain the user's desired attraction."""
     if df_activities.empty:
         return []
     return df_activities[df_activities['tourist_attraction'] == attr_name]['city'].unique().tolist()
- 
+
 def get_duration_by_luxury(h_type):
     """Suggests duration based on hotel tier."""
     return [3, 4, 5] if h_type == 'luxurious' else [1, 2, 3]
- 
+
 def get_weather_score(city, date_range=None):
     """Returns a scored index indicating pleasantness (0 - 100)."""
     # High score default indicating warm, lovely weather
     return 85
- 
+
 # Constraint Matrix connecting variables for the resolving engine
 CONSTRAINT_MATRIX = {
     ('origin', 'cities'): lambda val: get_reachable_cities(val),
@@ -261,7 +261,7 @@ CONSTRAINT_MATRIX = {
     ('attractions', 'cities'): lambda attr: get_cities_with_attraction(attr),
     ('hotel_types', 'days'): lambda h_type: get_duration_by_luxury(h_type),
 }
- 
+
 def propagate_constraints(user_inputs):
     """
     Implements the constraint boundary resolution.
@@ -286,11 +286,11 @@ def propagate_constraints(user_inputs):
                 pass
             
     return domains
- 
+
 def filter_by_weather(cities, date_range):
     """Logic to return the best rated cities for weather."""
     return [city for city in cities if get_weather_score(city, date_range) > 70]
- 
+
 def resolve_and_save_state(user_inputs, date_range=None):
     """
     The main Agent Decision Layer. Maps flexible inputs to strict validated options.
@@ -330,13 +330,13 @@ def resolve_and_save_state(user_inputs, date_range=None):
                 resolved[k] = domains[k][0] if len(domains[k]) > 0 else "Delhi"
             else:
                 resolved[k] = domains[k][0] if len(domains[k]) > 0 else None
- 
+
     # Determine desired target number of cities based on selected days:
     try:
         days_int = int(resolved['days'])
     except Exception:
         days_int = 5
- 
+
     if days_int <= 2:
         target_num_cities = 1
     elif days_int in [3, 4]:
@@ -347,7 +347,7 @@ def resolve_and_save_state(user_inputs, date_range=None):
         target_num_cities = 4
     else: # days_int > 8
         target_num_cities = 4 # plan for 4 or more cities if possible
- 
+
     # Now resolve destination cities
     user_cities = user_inputs.get('cities')
     is_flexible_active = False
@@ -372,9 +372,9 @@ def resolve_and_save_state(user_inputs, date_range=None):
                     explicit_cities.append(c)
     else:
         is_flexible_active = True
- 
+
     resolved_cities = list(explicit_cities)
- 
+
     # Under "Flexible Constraint Selection Form": fill up cities if less than the threshold only if "Flexible" is active
     if is_flexible_active:
         if len(resolved_cities) < target_num_cities:
@@ -400,20 +400,20 @@ def resolve_and_save_state(user_inputs, date_range=None):
                         break
                     if c != origin_city and c not in resolved_cities:
                         resolved_cities.append(c)
- 
+
     # Ensure a final fallback city if empty
     if not resolved_cities:
         origin_city = resolved.get('origin', 'Delhi')
         resolved_cities = ["Mumbai"] if origin_city != "Mumbai" else ["Delhi"]
- 
+
     resolved['cities'] = resolved_cities
- 
+
     # Normalize hotel_types
     h_type = resolved.get('hotel_types', 'budget')
     if not h_type or h_type == 'Flexible':
         h_type = 'budget'
     resolved['hotel_types'] = h_type
- 
+
     # Keep durations/hotel_tiers aligned with days and hotel_types
     num_cities = len(resolved['cities'])
     
@@ -430,12 +430,12 @@ def resolve_and_save_state(user_inputs, date_range=None):
         resolved['durations'] = [3 if resolved['hotel_types'] == 'luxurious' else 2] * num_cities
         
     resolved['hotel_tiers'] = [resolved['hotel_types']] * num_cities
- 
+
     global_trip_state.update(resolved)
     return "State resolved and saved."
- 
+
 # --- Unified Functional Interface Checklist ---
- 
+
 def search_flights(origin: str, destination: str) -> dict:
     source_clean = origin.strip().lower()
     dest_clean = destination.strip().lower()
@@ -495,7 +495,7 @@ def search_flights(origin: str, destination: str) -> dict:
         
     cheapest = min(matches, key=lambda x: x["price"])
     fastest = min(matches, key=lambda x: x["duration_minutes"])
- 
+
     price = int(cheapest['price'])
     log_city_data(city=destination, category="flight", amount=price)
     
@@ -520,7 +520,7 @@ def search_flights(origin: str, destination: str) -> dict:
         "price": price,
         "summary": f"Found {len(matches)} flights from {origin} to {destination}."
     }
- 
+
 def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 100000.0) -> dict:
     hotels = load_json_data("hotels.json")
     matches = [h for h in hotels if city.strip().lower() in h.get("city", "").lower() and h.get("stars", 0) >= min_rating and h.get("price_per_night", 0) <= max_price]
@@ -535,29 +535,31 @@ def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 1000
     recommended = sorted_by_rating[0]
     price = int(recommended['price_per_night'])
     log_city_data(city=city, category="hotel", amount=price)
- 
-    # Build option lines so the agent has context for the "Why selected" reasoning,
-    # but the summary makes it explicit that only ONE hotel should be shown per city.
+
+    # Only expose the single recommended hotel — no matches list — so the LLM
+    # structurally cannot enumerate multiple hotels per city.
     options_text = " | ".join(
         f"{h['name']} ₹{int(h['price_per_night'])}/night {h.get('stars','?')}★"
         for h in sorted_by_rating[:3]
     )
- 
     return {
         "success": True,
-        "top_rated": recommended,
-        "matches": sorted_by_rating[:3],
+        "hotel_name": recommended['name'],
+        "price_per_night": price,
+        "stars": recommended.get('stars', 'N/A'),
+        "amenities": recommended.get('amenities', []),
+        "address": recommended.get('address', f"{city} City Centre, India"),
         "summary": (
-            f"RECOMMENDED for {city} (show exactly ONE hotel in your response): "
-            f"{recommended['name']} at ₹{price}/night ({recommended.get('stars','?')}★). "
-            f"Other options considered: {options_text}."
+            f"Selected hotel for {city}: {recommended['name']}, "
+            f"₹{price}/night, {recommended.get('stars','?')} stars. "
+            f"(Other options considered for reasoning: {options_text})"
         )
     }
- 
+
 def search_hotels(city: str) -> dict:
     """Checklist compliance method. Maps directly to recommend_hotels."""
     return recommend_hotels(city)
- 
+
 def discover_places(city: str, place_type: str = None, min_rating: float = 0.0) -> dict:
     places = load_json_data("places.json")
     matches = [p for p in places if city.strip().lower() in p.get("city", "").lower() and p.get("rating", 0) >= min_rating and (not place_type or place_type.lower() in p.get("type", "").lower())]
@@ -565,7 +567,7 @@ def discover_places(city: str, place_type: str = None, min_rating: float = 0.0) 
         return {"success": False, "message": f"No attractions found in {city}."}
     sorted_places = sorted(matches, key=lambda x: x.get("rating", 0), reverse=True)
     return {"success": True, "attractions": sorted_places[:5]}
- 
+
 def search_places(attraction_type: str) -> dict:
     """Checklist compliance matching. Finds places containing matching types."""
     places = load_json_data("places.json")
@@ -573,7 +575,7 @@ def search_places(attraction_type: str) -> dict:
     if not matches: 
         return {"success": False, "message": f"No attractions found of type/name {attraction_type}."}
     return {"success": True, "attractions": matches[:5]}
- 
+
 def lookup_weather(city: str, start_date: str = None, end_date: str = None) -> dict:
     """Retrieves actual meteorological outline from WeatherService."""
     date_to_use = start_date if start_date else datetime.now().strftime("%Y-%m-%d")
@@ -598,7 +600,7 @@ def lookup_weather(city: str, start_date: str = None, end_date: str = None) -> d
             {"date": start_date or "Day 1", "temp": "28°C", "humidity": "60%", "condition": "Sunny"}
         ]
     }
- 
+
 def generate_itinerary_tables(daily_logs: list) -> str:
     global latest_agent_itinerary
     latest_agent_itinerary = list(daily_logs)
@@ -621,12 +623,12 @@ def generate_itinerary_tables(daily_logs: list) -> str:
     breakdown += f"| **GRAND TOTAL** | **₹{grand_total}** |\n"
     
     return log_table + breakdown
- 
+
 def estimate_budget(itinerary_summary: str) -> dict:
     return {"success": True, "summary": "Budget calculation logged.", "details": itinerary_summary}
- 
+
 # --- Complex Pathfinding BFS & Total Calculations ---
- 
+
 def get_detailed_flight_path(origin: str, destination: str) -> dict:
     """
     Computes the cheapest route between origin and destination using BFS.
@@ -718,7 +720,7 @@ def get_detailed_flight_path(origin: str, destination: str) -> dict:
         "total_price": 0,
         "message": f"No flight connectivity found between {origin} and {destination}."
     }
- 
+
 def analyze_flight_itinerary(df_flights, origin, destination, max_hops=3):
     if df_flights.empty:
         return "No paths found."
@@ -729,43 +731,43 @@ def analyze_flight_itinerary(df_flights, origin, destination, max_hops=3):
         route: group[['flight_id', 'airline', 'price']]
         for route, group in df_sorted.groupby(['origin', 'destination'])
     }
- 
+
     # BFS Queuing system
     queue = collections.deque([(origin, [origin], [])])
     all_possible_paths = []
- 
+
     while queue:
         current_city, path, path_data = queue.popleft()
- 
+
         if current_city == destination:
             all_possible_paths.append({"path": path, "legs": path_data})
             continue
- 
+
         if len(path) > max_hops + 1:
             continue
- 
+
         for (start, end), data in flights_by_route.items():
             if start == current_city and end not in path:
                 queue.append((end, path + [end], path_data + [{"route": (start, end), "options": data}]))
- 
+
     if not all_possible_paths:
         return "No paths found."
- 
+
     # Process and rank paths by pricing & connectivity gaps
     for p in all_possible_paths:
         p['total_min_price'] = int(sum(leg['options']['price'].min() for leg in p['legs']))
         p['num_hops'] = len(p['path']) - 1
- 
+
     cheapest = min(all_possible_paths, key=lambda x: x['total_min_price'])
     fastest = min(all_possible_paths, key=lambda x: x['num_hops'])
- 
+
     # Format the options cleanly for response
     return {
         "all_paths": all_possible_paths,
         "cheapest": cheapest,
         "fastest": fastest
     }
- 
+
 def get_cities_for_attractions(df_activities, attraction_list):
     """
     Takes a list of attraction names and returns a DataFrame
@@ -774,27 +776,27 @@ def get_cities_for_attractions(df_activities, attraction_list):
     if df_activities.empty:
         return pd.DataFrame()
     return df_activities[df_activities['tourist_attraction'].isin(attraction_list)]
- 
+
 def calculate_total_hotel_cost(df_hotels, cities, days_list=None, hotel_types=None):
     if days_list is None:
         days_list = [1] * len(cities)
     if hotel_types is None:
         hotel_types = ['budget'] * len(cities)
- 
+
     if not (len(days_list) == len(cities) == len(hotel_types)):
         return 0, "Error: Cities, days_list, and hotel_types must have the same length."
- 
+
     total_trip_hotel_cost = 0
     detailed_itinerary = []
- 
+
     for i, city in enumerate(cities):
         days = days_list[i]
         h_type = hotel_types[i]
         city_hotels = df_hotels[df_hotels['city'] == city]
- 
+
         if city_hotels.empty:
             return 0, f"No hotels found in {city}."
- 
+
         if h_type == 'cheapest':
             selection = city_hotels[city_hotels['category'] == 'cheapest']
         elif h_type == 'luxurious':
@@ -802,14 +804,14 @@ def calculate_total_hotel_cost(df_hotels, cities, days_list=None, hotel_types=No
         else:
             budget_options = city_hotels[city_hotels['category'] == 'budget']
             selection = budget_options.iloc[2:3] if len(budget_options) >= 3 else budget_options.iloc[0:1]
- 
+
         if selection.empty:
             return 0, f"No '{h_type}' hotel available in {city}."
- 
+
         price_per_night = int(selection.iloc[0]['price_per_night'])
         city_cost = price_per_night * days
         total_trip_hotel_cost += city_cost
- 
+
         detailed_itinerary.append({
             "city": city,
             "hotel": selection.iloc[0]['name'],
@@ -817,9 +819,9 @@ def calculate_total_hotel_cost(df_hotels, cities, days_list=None, hotel_types=No
             "nights": days,
             "cost": city_cost
         })
- 
+
     return total_trip_hotel_cost, detailed_itinerary
- 
+
 def build_package_trip(df_flights, df_hotels, cities_to_visit, origin, days_list=None, hotel_types=None):
     """
     Builds the complete trip itinerary including flights and hotels.
@@ -827,15 +829,15 @@ def build_package_trip(df_flights, df_hotels, cities_to_visit, origin, days_list
     full_route = [origin] + cities_to_visit + [origin]
     trip_itinerary = []
     total_flight_cost = 0
- 
+
     for i in range(len(full_route) - 1):
         start_node = full_route[i]
         end_node = full_route[i+1]
- 
+
         path_results = analyze_flight_itinerary(df_flights, start_node, end_node)
         if isinstance(path_results, str) or path_results == "No paths found.":
             return f"Error: Route {start_node} -> {end_node} is impossible."
- 
+
         best_leg = path_results['cheapest']
         trip_itinerary.append({
             "leg": f"{start_node} to {end_node}",
@@ -843,9 +845,9 @@ def build_package_trip(df_flights, df_hotels, cities_to_visit, origin, days_list
             "flight_cost": best_leg['total_min_price']
         })
         total_flight_cost += best_leg['total_min_price']
- 
+
     hotel_cost, hotel_details = calculate_total_hotel_cost(df_hotels, cities_to_visit, days_list, hotel_types)
- 
+
     return {
         "full_sequence": full_route,
         "itinerary_legs": trip_itinerary,
@@ -854,7 +856,7 @@ def build_package_trip(df_flights, df_hotels, cities_to_visit, origin, days_list
         "total_hotel_cost": hotel_cost,
         "total_package_cost": total_flight_cost + hotel_cost
     }
- 
+
 def build_final_package(df_flights, df_hotels):
     """
     Uses the saved global_trip_state to generate the quote.
@@ -867,7 +869,7 @@ def build_final_package(df_flights, df_hotels):
         global_trip_state['durations'] if global_trip_state['durations'] else [global_trip_state['days']], 
         global_trip_state['hotel_tiers'] if global_trip_state['hotel_tiers'] else [global_trip_state['hotel_types']]
     )
- 
+
 def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_tiers, origin):
     """
     Computes precise Flight, Hotel, and Dynamic Misc costs.
@@ -876,7 +878,7 @@ def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_ti
     total_hotel_cost = 0
     total_misc_cost = 0
     detailed_itinerary = []
- 
+
     for i, city in enumerate(cities):
         days = durations[i]
         h_type = hotel_tiers[i]
@@ -897,17 +899,6 @@ def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_ti
             selection = budget_options.iloc[2:3] if len(budget_options) >= 3 else budget_options.iloc[0:1]
             
         price = int(selection.iloc[0]['price_per_night']) if not selection.empty else 0
- 
-        # If the agent already recommended and logged a hotel price for this city,
-        # use that price so the table stays consistent with the hotels section.
-        agent_logged_price = city_data_memory.get(city, {}).get("hotel", 0)
-        if agent_logged_price > 0:
-            price = agent_logged_price
-            # Find the matching hotel row so we can keep the correct name too
-            exact_row = city_hotels[city_hotels['price_per_night'] == price]
-            if not exact_row.empty:
-                selection = exact_row.iloc[0:1]
- 
         cost = price * days
         
         total_hotel_cost += cost
@@ -920,7 +911,7 @@ def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_ti
             "hotel_cost": cost, 
             "misc_cost": int(misc_per_day * days)
         })
- 
+
     full_route = [origin] + cities + [origin]
     total_flight_cost = 0
     flight_legs = []
@@ -938,10 +929,10 @@ def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_ti
             "is_direct": leg_data.get("is_direct", True),
             "segments": leg_data.get("segments", [])
         })
- 
+
     avg_misc = int(sum(c['misc_cost']/c['nights'] for c in detailed_itinerary if c['nights'] > 0) / len(detailed_itinerary)) if detailed_itinerary else 1750
     total_misc_cost += avg_misc
- 
+
     return {
         "itinerary": detailed_itinerary,
         "flight_legs": flight_legs,
@@ -952,7 +943,7 @@ def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_ti
             "grand_total": int(total_hotel_cost + total_flight_cost + total_misc_cost)
         }
     }
- 
+
 def run_full_itinerary_generation(df_flights, df_hotels):
     """
     Triggers the calculation using the pre-resolved global_trip_state.
@@ -971,8 +962,8 @@ def run_full_itinerary_generation(df_flights, df_hotels):
         global_trip_state['hotel_tiers'] if global_trip_state['hotel_tiers'] else ['budget']*len(cities_list),
         global_trip_state['origin']
     )
- 
- 
+
+
 def build_itinerary_markdown_report_from_state(costs_data, origin, dest_cities, date_range, hotel_category):
     """
     Programmatically creates a gorgeous itinerary report mirroring the agent's markdown structure.
@@ -1049,7 +1040,7 @@ def build_itinerary_markdown_report_from_state(costs_data, origin, dest_cities, 
             pass
     if not start_date_str:
         start_date_str = datetime.now().strftime("%Y-%m-%d")
- 
+
     # Day-by-Day Itinerary
     md.append("## 📅 DAY-BY-DAY ITINERARY")
     table_rows = build_cost_breakdown_table(
@@ -1064,7 +1055,7 @@ def build_itinerary_markdown_report_from_state(costs_data, origin, dest_cities, 
     for city in dest_cities + [origin]:
         city_places = df_places[df_places['city'] == city].sort_values(by="rating", ascending=False)
         city_attractions_cache[city] = city_places[['name', 'rating']].to_dict(orient="records") if not city_places.empty else []
- 
+
     place_counters = {}
     for city in city_attractions_cache:
         place_counters[city] = 0
@@ -1099,7 +1090,7 @@ def build_itinerary_markdown_report_from_state(costs_data, origin, dest_cities, 
             md.append("- **Evening**: Strolling through local colorful markets, tasting local street food, and relaxing at night cafes.\n")
             
     return "\n".join(md)
- 
+
 def build_cost_breakdown_table(itinerary_data, flight_legs, hotel_details, start_date):
     """
     Constructs the day-by-day table data structure with real weather.
@@ -1168,7 +1159,7 @@ def build_cost_breakdown_table(itinerary_data, flight_legs, hotel_details, start
                 "temp_humidity": th_str
             })
             current_day += 1
- 
+
     # Now add the final day return flight!
     return_flight_cost = 0
     if len(flight_legs) > len(hotel_details):
@@ -1176,7 +1167,7 @@ def build_cost_breakdown_table(itinerary_data, flight_legs, hotel_details, start
         
     last_city = hotel_details[-1]['city'] if hotel_details else "Destination"
     avg_misc = int(sum(c['misc_cost']/c['nights'] for c in hotel_details if c['nights'] > 0) / len(hotel_details)) if hotel_details else 1750
- 
+
     last_city_date_str = (start_date_obj + timedelta(days=current_day-1)).strftime("%Y-%m-%d")
     weather_data_last = WeatherService.get_weather_by_city(last_city, last_city_date_str)
     if weather_data_last and "error" not in weather_data_last:
@@ -1197,7 +1188,7 @@ def build_cost_breakdown_table(itinerary_data, flight_legs, hotel_details, start
     else:
         weather_str_last = "Sunny, 28°C"
         th_str_last = "28°C / 60%"
- 
+
     table_rows.append({
         "day_of_trip": f"Day {current_day}",
         "date": last_city_date_str,
