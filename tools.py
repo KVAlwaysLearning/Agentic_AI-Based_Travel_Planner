@@ -916,6 +916,9 @@ def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_ti
             "segments": leg_data.get("segments", [])
         })
 
+    avg_misc = int(sum(c['misc_cost']/c['nights'] for c in detailed_itinerary if c['nights'] > 0) / len(detailed_itinerary)) if detailed_itinerary else 1750
+    total_misc_cost += avg_misc
+
     return {
         "itinerary": detailed_itinerary,
         "flight_legs": flight_legs,
