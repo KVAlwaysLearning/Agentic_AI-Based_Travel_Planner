@@ -479,7 +479,7 @@ def search_flights(origin: str, destination: str) -> dict:
             "is_direct": False,
             "cheapest_option": cheapest_option,
             "fastest_option": cheapest_option,
-            "matches": formatted_segments,
+            "matches": formatted_segments[:3],
             "segments": formatted_segments,
             "price": res_detailed["total_price"],
             "summary": f"⚠️ Note: There are no direct flights between {origin} and {destination}. Showing connecting flight route: {' -> '.join(res_detailed['path'])} with a total price of ₹{res_detailed['total_price']}."
@@ -515,7 +515,7 @@ def search_flights(origin: str, destination: str) -> dict:
         "is_direct": True,
         "cheapest_option": cheapest, 
         "fastest_option": fastest, 
-        "matches": matches,
+        "matches": matches[:3],
         "segments": cheapest_option_segments,
         "price": price,
         "summary": f"Found {len(matches)} flights from {origin} to {destination}."
@@ -538,7 +538,7 @@ def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 1000
     return {
         "success": True, 
         "top_rated": sorted_by_rating[0], 
-        "matches": sorted_by_rating,
+        "matches": sorted_by_rating[:3],
         "summary": f"Top rated: {sorted_by_rating[0]['name']}"
     }
 
@@ -560,7 +560,7 @@ def search_places(attraction_type: str) -> dict:
     matches = [p for p in places if attraction_type.strip().lower() in p.get("type", "").lower() or attraction_type.strip().lower() in p.get("name", "").lower()]
     if not matches: 
         return {"success": False, "message": f"No attractions found of type/name {attraction_type}."}
-    return {"success": True, "attractions": matches}
+    return {"success": True, "attractions": matches[:5]}
 
 def lookup_weather(city: str, start_date: str = None, end_date: str = None) -> dict:
     """Retrieves actual meteorological outline from WeatherService."""
