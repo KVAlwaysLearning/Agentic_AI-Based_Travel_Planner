@@ -532,25 +532,25 @@ def recommend_hotels(city: str, min_rating: float = 0.0, max_price: float = 1000
         h['price_per_night'] = int(h['price_per_night'])
    
     sorted_by_rating = sorted(matches, key=lambda x: x.get("stars", 0), reverse=True)
-    price = int(sorted_by_rating[0]['price_per_night'])
+    recommended = sorted_by_rating[0]
+    price = int(recommended['price_per_night'])
     log_city_data(city=city, category="hotel", amount=price)
  
-    # Build a summary that enumerates every match so the agent cannot collapse
-    # multiple hotels into a single listing, even on short trips.
-    hotel_lines = [
-        f"{h['name']} (₹{int(h['price_per_night'])}/night, {h.get('stars', 'N/A')}★)"
+    # Build option lines so the agent has context for the "Why selected" reasoning,
+    # but the summary makes it explicit that only ONE hotel should be shown per city.
+    options_text = " | ".join(
+        f"{h['name']} ₹{int(h['price_per_night'])}/night {h.get('stars','?')}★"
         for h in sorted_by_rating[:3]
-    ]
-    all_hotels_summary = "; ".join(hotel_lines)
+    )
  
     return {
-        "success": True, 
-        "top_rated": sorted_by_rating[0], 
+        "success": True,
+        "top_rated": recommended,
         "matches": sorted_by_rating[:3],
-        "total_matches": len(matches),
         "summary": (
-            f"Found {len(matches)} hotel(s) in {city}. "
-            f"IMPORTANT: List ALL of the following in your response — {all_hotels_summary}."
+            f"RECOMMENDED for {city} (show exactly ONE hotel in your response): "
+            f"{recommended['name']} at ₹{price}/night ({recommended.get('stars','?')}★). "
+            f"Other options considered: {options_text}."
         )
     }
  
@@ -897,6 +897,17 @@ def calculate_itinerary_costs(df_flights, df_hotels, cities, durations, hotel_ti
             selection = budget_options.iloc[2:3] if len(budget_options) >= 3 else budget_options.iloc[0:1]
             
         price = int(selection.iloc[0]['price_per_night']) if not selection.empty else 0
+ 
+        # If the agent already recommended and logged a hotel price for this city,
+        # use that price so the table stays consistent with the hotels section.
+        agent_logged_price = city_data_memory.get(city, {}).get("hotel", 0)
+        if agent_logged_price > 0:
+            price = agent_logged_price
+            # Find the matching hotel row so we can keep the correct name too
+            exact_row = city_hotels[city_hotels['price_per_night'] == price]
+            if not exact_row.empty:
+                selection = exact_row.iloc[0:1]
+ 
         cost = price * days
         
         total_hotel_cost += cost
