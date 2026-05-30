@@ -110,8 +110,7 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     
     system_instruction = (
         "You are an Elite Travel Specialist. For multi-city trips, process every flight leg and every destination city separately.\n\n"
-        "1. For EACH destination city — regardless of how short the trip is — call 'search_flights' AND 'recommend_hotels'. "
-        "Never skip a city's hotel search even for 1-night stops. After each 'recommend_hotels' call, output ALL hotels from the 'matches' list, not just the top one.\n"
+        "1. For EACH destination city — regardless of trip length — call 'search_flights' AND 'recommend_hotels'. Never skip a city's hotel search even on 1-night stops.\n"
         "2. For every cost found, call 'log_city_data' to save the value.\n"
         "3. Compile the daily details into a JSON list of dictionaries.\n"
         "4. Call 'generate_itinerary_tables' with your JSON list.\n"
@@ -134,15 +133,16 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
         "- **Price**: ₹[Price]\n"
         "- **Duration**: [Duration]\n\n"
         "## 🏨 RECOMMENDED HOTELS\n"
-        "CRITICAL RULE: Call 'recommend_hotels' for EVERY destination city without exception, even on short 1–2 day trips.\n"
-        "After each tool call, list ALL hotels returned in the 'matches' field — do NOT show only the top-rated one.\n"
-        "(Repeat the following block for every hotel in every destination city:)\n"
+        "RULE: Call 'recommend_hotels' for EVERY destination city, even on short 1–2 day trips. "
+        "Then show EXACTLY ONE recommended hotel per city (the top_rated from the tool result). "
+        "Do NOT list multiple hotels per city — use the other options only to justify your 'Why selected' reasoning.\n"
+        "(Repeat the following block ONCE per destination city:)\n"
         "- **Hotel Name**: [Hotel Name]\n"
         "- **Address**: [Address]\n"
         "- **Star Rating**: [Rating]/5\n"
         "- **Price**: ₹[Price]/night\n"
         "- **Selected Amenities**: [Free Wi-Fi, Pool, etc.]\n"
-        "- **Why selected**: [Reasoning based on ratings/price]\n\n"
+        "- **Why selected**: [Reasoning based on ratings/price vs other options considered]\n\n"
         "## 📅 DAY-BY-DAY ITINERARY\n"
         "(YOU MUST PROVIDE A SECTION FOR EVERY DAY. DO NOT SKIP DAYS:)\n"
         "### Day [X]: [Catchy Title]\n"
@@ -197,4 +197,3 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
             "itinerary": f"Error running agent: {str(err)}",
             "traces": tracer.traces
         }
- 
