@@ -4,15 +4,15 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import StructuredTool
 from langchain_core.callbacks import BaseCallbackHandler
- 
+
 # Use the classic paths for AgentExecutor and create_tool_calling_agent
 try:
     from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 except ImportError:
     from langchain.agents import AgentExecutor, create_tool_calling_agent
- 
+
 import tools
- 
+
 class AgentTracerCallbackHandler(BaseCallbackHandler):
     """
     Custom LangChain Callback Handler to hook into agent actions 
@@ -25,11 +25,11 @@ class AgentTracerCallbackHandler(BaseCallbackHandler):
         self.step = 0
         self.current_tool_name = None
         self.current_tool_args = None
- 
+
     def on_llm_start(self, serialized, prompts, **kwargs):
         if self.callback_log:
             self.callback_log("agent_thinking", "Agent reasoning loop running...", {})
- 
+
     def on_agent_action(self, action, **kwargs):
         self.step += 1
         self.current_tool_name = action.tool
@@ -41,7 +41,7 @@ class AgentTracerCallbackHandler(BaseCallbackHandler):
                 f"🤖 Agent decided to run **{self.current_tool_name}** with arguments: `{json.dumps(self.current_tool_args)}`", 
                 {"tool": self.current_tool_name, "args": self.current_tool_args}
             )
- 
+
     def on_tool_end(self, output, **kwargs):
         output_dict = {}
         if isinstance(output, str):
@@ -69,8 +69,8 @@ class AgentTracerCallbackHandler(BaseCallbackHandler):
             "arguments": self.current_tool_args,
             "result": output_dict
         })
- 
- 
+
+
 def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     """
     Runs the LangChain Groq Travel Agent.
@@ -110,7 +110,7 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
     
     system_instruction = (
         "You are an Elite Travel Specialist. For multi-city trips, process every flight leg and every destination city separately.\n\n"
-        "1. For EACH destination city — regardless of trip length — call 'search_flights' AND 'recommend_hotels'. Never skip a city's hotel search even on 1-night stops.\n"
+        "1. For each destination, call 'search_flights' and 'recommend_hotels'.\n"
         "2. For every cost found, call 'log_city_data' to save the value.\n"
         "3. Compile the daily details into a JSON list of dictionaries.\n"
         "4. Call 'generate_itinerary_tables' with your JSON list.\n"
@@ -118,7 +118,7 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
         "## FLIGHT SELECTION RULES:\n"
         "- Check for direct flights first. If there are no direct flights between two cities, you MUST add a line: '⚠️ Note: There are no direct flights between [Origin] and [Destination]. Showing connecting flight route.'\n"
         "- Then list EVERY single connecting flight segment with: Flight number, airline, from city, to city, price, departure and arrival times, even if there is no stay in the intermediate connecting city.\n"
-        "- For the day-by-day table, the travel day row must show the CUMULATIVE flight cost of all connecting flights combined.\n\n"
+        "- For the day-by-day table, the travel day row must show the CUMULATIVE flight cost of all connecting flights combined.\n""- In the ✈️ SELECTED FLIGHT OPTIONS text section, when listing a connecting route, show each segment individually (airline, route, schedule, per-segment price), then add a final line: **Total Flight Cost: ₹[sum of all segments]**. Never show only a single segment price as the cost for the whole route.\n\n"
         "## 📑 TRIP SUMMARY\n"
         "- **Origin**: [Origin City]\n"
         "- **Destination**: [Destination Cities, comma-separated]\n"
@@ -133,16 +133,13 @@ def run_travel_agent(user_prompt: str, callback_log=None) -> dict:
         "- **Price**: ₹[Price]\n"
         "- **Duration**: [Duration]\n\n"
         "## 🏨 RECOMMENDED HOTELS\n"
-        "RULE: Call 'recommend_hotels' for EVERY destination city, even on short 1–2 day trips. "
-        "Then show EXACTLY ONE recommended hotel per city (the top_rated from the tool result). "
-        "Do NOT list multiple hotels per city — use the other options only to justify your 'Why selected' reasoning.\n"
-        "(Repeat the following block ONCE per destination city:)\n"
+        "(List hotels for EVERY destination city. Repeat for each city:)\n"
         "- **Hotel Name**: [Hotel Name]\n"
         "- **Address**: [Address]\n"
         "- **Star Rating**: [Rating]/5\n"
         "- **Price**: ₹[Price]/night\n"
         "- **Selected Amenities**: [Free Wi-Fi, Pool, etc.]\n"
-        "- **Why selected**: [Reasoning based on ratings/price vs other options considered]\n\n"
+        "- **Why selected**: [Reasoning based on ratings/price]\n\n"
         "## 📅 DAY-BY-DAY ITINERARY\n"
         "(YOU MUST PROVIDE A SECTION FOR EVERY DAY. DO NOT SKIP DAYS:)\n"
         "### Day [X]: [Catchy Title]\n"
