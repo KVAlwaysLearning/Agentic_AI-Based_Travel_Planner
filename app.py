@@ -233,48 +233,48 @@ with tab1:
                             start_date_val
                         )
                     
-                    # Display the day-by-day table
-                    st.table(rows)
-                    
-                    # Print warning if there are no direct flights
-                    no_direct_warnings = []
-                    for leg in flight_legs:
-                        if not leg.get("is_direct", True):
-                            start_c, end_c = leg["leg"].split("->")
-                            no_direct_warnings.append(f"⚠️ Note: There are no direct flights between {start_c} and {end_c}. Showing connecting flight route.")
-                    
-                    for warn in no_direct_warnings:
-                        st.warning(warn)
+                        # Display the day-by-day table
+                        st.table(rows)
                         
-                    # Flight Summary Table listing flight no, airline, from, to, cost
-                    st.subheader("✈️ Selected Flights Summary Table")
-                    flight_rows = []
-                    for leg in flight_legs:
-                        for segment in leg.get("segments", []):
-                            flight_rows.append({
-                                "Flight No": segment.get("flight_id"),
-                                "Airline": segment.get("airline"),
-                                "From": segment.get("from"),
-                                "To": segment.get("to"),
-                                "Cost": f"₹{segment.get('price'):,}"
-                            })
-                    if flight_rows:
-                        st.table(flight_rows)
-                    else:
-                        st.info("No flight segment details available.")
+                        # Print warning if there are no direct flights
+                        no_direct_warnings = []
+                        for leg in flight_legs:
+                            if not leg.get("is_direct", True):
+                                start_c, end_c = leg["leg"].split("->")
+                                no_direct_warnings.append(f"⚠️ Note: There are no direct flights between {start_c} and {end_c}. Showing connecting flight route.")
                         
-                    # Decision logic reasons
-                    st.subheader("💡 Selection Intelligence & Decision Logic")
-                    st.markdown("""
-                    - **Flight Routing Selection**: 
-                      - Cheaper and direct flight paths were prioritized.
-                      - If direct flights do not exist, a custom BFS (Breadth-First Search) routing algorithm traversed alternative paths (e.g., through Kolkata) to resolve the absolute cheapest segment-by-segment chain of connections seamlessly.
-                    - **Hotel Selection**: 
-                      - Hotels of the requested class (e.g. Budget, Cheapest, or Luxury) with the highest verified rating scores (stars) were picked.
-                    """)
-                else:
-                    st.error("Failed to compile itinerary.")
-                    st.text(result.get("itinerary"))
+                        for warn in no_direct_warnings:
+                            st.warning(warn)
+                            
+                        # Flight Summary Table listing flight no, airline, from, to, cost
+                        st.subheader("✈️ Selected Flights Summary Table")
+                        flight_rows = []
+                        for leg in flight_legs:
+                            for segment in leg.get("segments", []):
+                                flight_rows.append({
+                                    "Flight No": segment.get("flight_id"),
+                                    "Airline": segment.get("airline"),
+                                    "From": segment.get("from"),
+                                    "To": segment.get("to"),
+                                    "Cost": f"₹{segment.get('price'):,}"
+                                })
+                        if flight_rows:
+                            st.table(flight_rows)
+                        else:
+                            st.info("No flight segment details available.")
+                            
+                        # Decision logic reasons
+                        st.subheader("💡 Selection Intelligence & Decision Logic")
+                        st.markdown("""
+                        - **Flight Routing Selection**: 
+                          - Cheaper and direct flight paths were prioritized.
+                          - If direct flights do not exist, a custom BFS (Breadth-First Search) routing algorithm traversed alternative paths (e.g., through Kolkata) to resolve the absolute cheapest segment-by-segment chain of connections seamlessly.
+                        - **Hotel Selection**: 
+                          - Hotels of the requested class (e.g. Budget, Cheapest, or Luxury) with the highest verified rating scores (stars) were picked.
+                        """)
+            else:
+                st.error("Failed to compile itinerary.")
+                st.text(result.get("itinerary"))
 
 with tab2:
     st.subheader("🎯 Flexible Constraint Selection Form")
